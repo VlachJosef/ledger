@@ -1,0 +1,29 @@
+name:                serokell-test-task-lib
+version:             1.0
+description:         Library for test task by Serokell Team
+homepage:            https://github.com/serokell/serokell-test-task
+bug-reports:         https://github.com/serokell/serokell-test-task/issues
+license:             MIT
+license-file:        LICENSE
+author:              Serokell
+maintainer:          hi@serokell.io
+copyright:           2018 Serokell
+category:            Network
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+tested-with:         GHC == 8.2.2
+
+library
+  hs-source-dirs:      lib
+  exposed-modules:     Serokell.Communication.IPC
+
+  build-depends:       base >= 4.9 && < 5
+                     , binary
+                     , bytestring
+                     , filepath
+                     , network
+                     , safe-exceptions
+
+  ghc-options:         -Wall
+  default-language:    Haskell2010
