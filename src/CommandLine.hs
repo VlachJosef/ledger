@@ -16,6 +16,7 @@ data CLIArguments = CLIArguments
     , resyncTimeout :: Int
     } deriving (Show)
 
+argumentP2 :: Parser CLIArguments
 argumentP2 =
     CLIArguments <$>
     (NodeId <$> argument auto (metavar "ID" <> help "Target for the greeting0")) <*>
@@ -35,6 +36,13 @@ argumentP2 =
     argument
         auto
         (metavar "RESYNC_TIMEOUT" <> help "Timeout for ledger synchronization")
+
+aaaa :: ParserInfo CLIArguments
+aaaa =
+    (info
+         (argumentP2 <**> helper)
+         (fullDesc <> progDesc "Print a greeting for TARGET" <>
+          header "hello - a test for optparse-applicative"))
 
 argumentPR2 :: String -> ParserResult CLIArguments
 argumentPR2 str =

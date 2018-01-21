@@ -6,15 +6,18 @@ module Lib
     ( www
     ) where
 
-import Control.Concurrent (forkIO)
+import CommandLine
+import Control.Concurrent (forkIO, myThreadId, MVar)
+import Control.Exception
 import Control.Monad
 import Control.Newtype
 import Crypto.Sign.Ed25519
-import Data.Binary (Binary)
+import Data.Binary
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Base58 as B58
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Conversion as DBC
+import Data.ByteString.Conversion.To
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Digest.Pure.SHA as SHA
 import Data.Map (Map)
@@ -40,15 +43,15 @@ data Transaction = Transaction
     { from :: Address
     , to :: Address
     , amount :: Int
-    }
+    } deriving (Show)
 
 newtype TxId = TxId
     { unTxId :: Int
-    } deriving (Eq, Ord, Binary)
+    } deriving (Eq, Ord, Show, Binary)
 
 newtype Address = Address
     { rawAddress :: S.ByteString
-    } deriving (Show, Read, Eq, Ord, Monoid)
+    } deriving (Show, Read, Eq, Ord, Monoid, Binary)
 
 type Balance = Int
 
@@ -60,9 +63,11 @@ instance Newtype Example
 
 newtype Ledger = Ledger
     { unLedger :: Map Address Balance
-    } deriving (Eq, Show, Monoid, Generic)
+    } deriving (Eq, Show, Generic)
 
 instance Newtype Ledger
+
+instance Binary Ledger
 
 hash :: S.ByteString -> S.ByteString
 hash = BL.toStrict . SHA.bytestringDigest . SHA.sha256 . BL.fromStrict
@@ -76,7 +81,11 @@ data Command
     | Query TxId
     | Balance Address
     | Register PublicKey
+    | LedgerQuery
+    | LedgerSync
+    | Sync
     | InvalidCommand S.ByteString
+    deriving (Show)
 
 data CommandResult
     = LedgerUpdate Ledger
@@ -84,6 +93,9 @@ data CommandResult
                    Ledger
     | BalanceInfo Balance
     | NoAction String
+    | RunSync
+    | LedgerSyncRes S.ByteString
+    deriving (Show)
 
 processCommand :: Ledger -> Command -> CommandResult
 processCommand ledger (Submit (Transaction {..})) =
@@ -92,17 +104,27 @@ processCommand ledger (Submit (Transaction {..})) =
         (LedgerUpdate)
         (transferBalance from to amount ledger)
 processCommand ledger (Query (TxId txId)) = NoAction ""
+processCommand ledger Sync = RunSync
 processCommand ledger (Balance address) =
     either (\a -> NoAction (show a)) (BalanceInfo) (balance ledger address)
 processCommand ledger (Register pk) = Registration address ledgerUpd
   where
     (address, ledgerUpd) = register ledger pk
+processCommand ledger (LedgerQuery) = LedgerUpdate ledger
+processCommand ledger (LedgerSync) =
+    LedgerSyncRes $ BL.toStrict (encode (ssww ledger))
 processCommand ledger (InvalidCommand command) = NoAction (show command)
+
+ssww :: Ledger -> Ledger
+ssww = over Ledger (Map.insert (Address "Dsdasdsa") 1000)
 
 stringToCommand :: [S.ByteString] -> IO Command
 stringToCommand ["register"] = do
     (pk, sk) <- createKeypair
     pure $ Register pk
+stringToCommand ["ledger"] = pure LedgerQuery
+stringToCommand ["syncLedger"] = pure LedgerSync
+stringToCommand ["sync"] = pure Sync
 stringToCommand ["BALANCE", address] = pure $ Balance $ Address address
 stringToCommand ["SUBMIT", from, to, amount] =
     let maybeInt = DBC.fromByteString amount :: Maybe Int
@@ -135,7 +157,7 @@ withdrawBalance :: Address -> Int -> Ledger -> Either LedgerError Ledger
 withdrawBalance address amount ledger = do
     currentBalance <- balance ledger address
     if currentBalance < amount
-        then Left $ NotEnoughBalance address amount
+        then Left $ NotEnoughBalance address currentBalance
         else Right $
              over Ledger (Map.insert address (currentBalance - amount)) ledger
 
@@ -150,30 +172,79 @@ transferBalance from to amount =
 initialBalance :: Ledger -> Address -> Ledger
 initialBalance ledger address = over Ledger (Map.insert address 1000) ledger
 
-runNode :: (Net.Socket -> Conversation -> IO Bool) -> IO ()
-runNode = listenUnixSocket "sockets" (NodeId 0)
+response :: String -> S.ByteString
+response str = BL.toStrict (toByteString (str <> "\n"))
 
-dddds :: Net.Socket -> Conversation -> IO Bool
-dddds socket (Conversation {..}) = True <$ forkIO (loop emptyLedger)
+syncLedger :: NodeId -> IO ()
+syncLedger nodeId =
+    trace
+        "syncLedger CALLED"
+        (connectToUnixSocket "sockets" nodeId synchronization)
+
+ledgerSyncCmd = "syncLedger"
+
+synchronization :: Conversation -> IO ()
+synchronization (Conversation {..})
+    -- pure () <$ forkIO $
+ = do
+    tId <- myThreadId
+    putStrLn ("IN synchronization ThreadId " <> show tId)
+    send ledgerSyncCmd
+    putStrLn ("IN synchronization ThreadId " <> show tId <> "AFTER SEND")
+    let ssss = trace ("TRACE synchronization") ()
+    ledger <- recv
+    putStrLn ("IN synchronization ThreadId " <> show tId <> "AFTER RECV")
+    let ledgerObj = decode (BL.fromStrict ledger) :: Ledger
+    putStrLn ("TRACE synchronization ledger: " <> show ledgerObj)
+    pure ()
+
+ssss :: Either IOException a -> IO ()
+ssss (Right aa) = putStrLn "OK"
+ssss (Left ex) = putStrLn ("KO: " <> show ex)
+
+ssss2 :: Either IOException a -> IO ()
+ssss2 (Right aa) = putStrLn "22OK"
+ssss2 (Left ex) = putStrLn ("22KO: " <> show ex)
+
+dddds :: NodeId -> Conversation -> IO Bool
+dddds nodeId (Conversation {..}) = do
+    True <$
+        forkIO
+            ((do tId <- myThreadId
+                 (putStrLn $
+                  "FORKING from " <> show tId <> ": NodeId " <> show nodeId)) <*
+             (loop emptyLedger))
   where
     loop :: Ledger -> IO ()
     loop ledger = do
+        tId <- myThreadId
         input <- recv
         command <- stringToCommand $ BS.words input
+        putStrLn (show tId <> " " <> show command)
         let (ledgerUpd, ioAction) =
                 case processCommand ledger command of
-                    LedgerUpdate ledger -> (ledger, pure ())
+                    RunSync -> (ledger, (try (syncLedger (NodeId 1))) >>= ssss)
+                    LedgerUpdate ledger ->
+                        (ledger, send $ response (show ledger))
                     BalanceInfo balance ->
-                        (ledger, putStrLn ("Your balance is " <> show balance))
+                        ( ledger
+                        , send $ response ("Your balance is " <> show balance))
                     Registration address ledger ->
-                        (ledger, putStrLn ("Your address is " <> show address))
-                    NoAction message -> (ledger, putStrLn message)
-        _ <- ioAction
+                        ( ledger
+                        , send $ response ("Your address is " <> show address))
+                    LedgerSyncRes ledg ->
+                        trace
+                            ("TRACE [LedgerSyncRes] dddss tId" <> show tId <>
+                             "ledger " <>
+                             show ledg)
+                            (ledger, send ledg)
+                    NoAction message -> (ledger, send $ response message)
+        _ <- (try ioAction) >>= ssss2
         nextStep (BS.unpack input) (loop ledgerUpd)
 
 nextStep :: String -> IO () -> IO ()
-nextStep "" _ = putStrLn "Closed by peer!"
+nextStep "" io = putStrLn "Closed by peer!" -- *> io
 nextStep _ io = io
 
-www :: IO ()
-www = runNode dddds
+www :: CLIArguments -> IO ()
+www (CLIArguments {..}) = listenUnixSocket "sockets" id (dddds id)
