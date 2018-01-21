@@ -2,12 +2,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Lib
-    ( www
-    ) where
+module Lib where
 
 import CommandLine
-import Control.Concurrent (forkIO, myThreadId, MVar)
+import Control.Concurrent
 import Control.Exception
 import Control.Monad
 import Control.Newtype
@@ -61,9 +59,13 @@ newtype Example =
 
 instance Newtype Example
 
-newtype Ledger = Ledger
-    { unLedger :: Map Address Balance
-    } deriving (Eq, Show, Generic)
+newtype Ledger =
+    Ledger (Map Address Balance)
+    deriving (Eq, Show, Generic)
+
+newtype LedgerState =
+    LedgerState (MVar Ledger)
+    deriving (Eq, Generic)
 
 instance Newtype Ledger
 
@@ -206,19 +208,21 @@ ssss2 :: Either IOException a -> IO ()
 ssss2 (Right aa) = putStrLn "22OK"
 ssss2 (Left ex) = putStrLn ("22KO: " <> show ex)
 
-dddds :: NodeId -> Conversation -> IO Bool
-dddds nodeId (Conversation {..}) = do
+dddds :: LedgerState -> NodeId -> Conversation -> IO Bool
+dddds (LedgerState ledgerState) nodeId (Conversation {..}) = do
     True <$
         forkIO
             ((do tId <- myThreadId
                  (putStrLn $
-                  "FORKING from " <> show tId <> ": NodeId " <> show nodeId)) <*
-             (loop emptyLedger))
+                  "FORKING from " <> show tId <> ": NodeId " <> show nodeId)) <* do
+                 loop)
   where
-    loop :: Ledger -> IO ()
-    loop ledger = do
-        tId <- myThreadId
+    loop :: IO ()
+    loop = do
         input <- recv
+        ledger <- readMVar ledgerState
+        tId <- myThreadId
+        --putStrLn $ "LEDGER from thread " <> show tId <> ", Ledger: " <> show ledger
         command <- stringToCommand $ BS.words input
         putStrLn (show tId <> " " <> show command)
         let (ledgerUpd, ioAction) =
@@ -240,11 +244,16 @@ dddds nodeId (Conversation {..}) = do
                             (ledger, send ledg)
                     NoAction message -> (ledger, send $ response message)
         _ <- (try ioAction) >>= ssss2
-        nextStep (BS.unpack input) (loop ledgerUpd)
+        -- _ <- takeMVar ledgerState
+        -- _ <- putMVar ledgerState ledgerUpd
+        _ <- modifyMVar_ ledgerState (\_ -> pure ledgerUpd)
+        nextStep (BS.unpack input) loop
 
 nextStep :: String -> IO () -> IO ()
 nextStep "" io = putStrLn "Closed by peer!" -- *> io
 nextStep _ io = io
 
 www :: CLIArguments -> IO ()
-www (CLIArguments {..}) = listenUnixSocket "sockets" id (dddds id)
+www (CLIArguments {..}) = do
+    ledgerState <- newMVar emptyLedger
+    listenUnixSocket "sockets" id (dddds (LedgerState ledgerState) id)
