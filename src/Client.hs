@@ -86,12 +86,15 @@ nodeCommunication sk (NodeConversation Conversation {..}) clientCmd =
             response <- send encodedTransfer *> recv
             pure $ decode (BL.fromStrict response)
 
-connect :: SecretKey -> NodeConversation -> Conversation -> IO Bool
-connect sk nc (Conversation {..}) = do
+connect :: NodeId -> SecretKey -> NodeConversation -> Conversation -> IO Bool
+connect nodeId sk nc (Conversation {..}) = do
     True <$
         forkIO
             ((do tId <- myThreadId
-                 (putStrLn $ "CLIENT FORKING from " <> show tId)) <* do loop)
+                 putStrLn $
+                     "Client " <> show (unNodeId $nodeId) <>
+                     ". Forking new thread " <>
+                     show tId) <* do loop)
   where
     comm = nodeCommunication sk nc
     loop :: IO ()
@@ -118,7 +121,7 @@ response str = BL.toStrict (toByteString (str <> "\n"))
 
 connectClient :: NodeConversation -> ClientConfig -> SecretKey -> IO ()
 connectClient nc (ClientConfig {..}) sk = do
-    listenUnixSocket "sockets" nodeId (connect sk nc)
+    listenUnixSocket "sockets" nodeId (connect nodeId sk nc)
 
 newtype NodeConversation = NodeConversation
     { unNodeConverasation :: Conversation

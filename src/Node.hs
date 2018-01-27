@@ -30,6 +30,11 @@ data NodeState = NodeState
     , nodeLedger :: MVar Ledger
     }
 
+calculateNeighbours :: NodeConfig -> [NodeId]
+calculateNeighbours nodeConfig =
+    let nId = (unNodeId . nodeId) nodeConfig
+    in NodeId <$> filter (\a -> a /= nId) [0 .. nodeCount nodeConfig]
+
 initialNodeState :: NodeConfig -> Conversation -> IO NodeState
 initialNodeState nodeConfig conversation = do
     emptyBlockChain <- newMVar []
@@ -38,7 +43,7 @@ initialNodeState nodeConfig conversation = do
     pure $
         NodeState
             nodeConfig
-            []
+            (calculateNeighbours nodeConfig)
             emptyBlockChain
             emptyTransactionPool
             conversation
@@ -90,6 +95,7 @@ nodeStatus nodeState = do
             (unNodeId ((nodeId . nodeConfig) nodeState))
             (length txSize)
             (length blockChainSize)
+            (unNodeId <$> neighbours nodeState)
 
 handleClientNodeExchange :: NodeState
                          -> ClientNodeExchange

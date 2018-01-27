@@ -15,7 +15,7 @@ data ClientConfig = ClientConfig
     } deriving (Show)
 
 defaultClientArguments :: ClientConfig
-defaultClientArguments = ClientConfig (NodeId 1) Nothing Nothing
+defaultClientArguments = ClientConfig (NodeId 50) Nothing Nothing
 
 clientArgumentsParser :: Parser ClientConfig
 clientArgumentsParser =

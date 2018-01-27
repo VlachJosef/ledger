@@ -21,7 +21,7 @@ case "$#" in
 	fi
 
 	stack build
-	./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-client -k keys/8bded39f1092ecaec9c7d63cb6610c450e748b355abc82593d7a01c4dc8ef0f0
+	./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-client -n $NODE_ID -k keys/8bded39f1092ecaec9c7d63cb6610c450e748b355abc82593d7a01c4dc8ef0f0
 	;;
     *)
 	help

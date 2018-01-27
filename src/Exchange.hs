@@ -41,6 +41,7 @@ data NodeInfo = NodeInfo
     { nId :: Int
     , txPoolCount :: Int
     , blockCount :: Int
+    , neighbourNodes :: [Int]
     } deriving (Show, G.Generic)
 
 instance Binary NodeInfo
