@@ -74,7 +74,9 @@ nodeCommunication :: SecretKey
 nodeCommunication sk (NodeConversation Conversation {..}) clientCmd =
     case clientCmd of
         StatusCmd -> do
-            response <- send "status" *> recv
+            let payload = CExchange FetchStatus
+            let encodedTransfer = BL.toStrict (encode payload)
+            response <- send encodedTransfer *> recv
             pure $ decode (BL.fromStrict response)
         TransferCmd address amount -> do
             let transfer = Transfer (toPublicKey sk) address amount
@@ -101,6 +103,7 @@ connect sk nc (Conversation {..}) = do
                 exchangeResp <- comm clientCmd
                 case exchangeResp of
                     (NExchangeResp x) -> send $ response (show x)
+                    (StatusInfo statusInfo) -> send $ response (show statusInfo)
             ErrorCmd error -> send $ response error
             UnknownCmd -> send $ response "Unkown command"
         putStrLn $ "Client command received " <> show tId

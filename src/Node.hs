@@ -1,7 +1,9 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-module Node where
+module Node
+    ( www
+    ) where
 
 import Block
 import Control.Concurrent
@@ -15,7 +17,6 @@ import Data.Semigroup
 import Exchange
 import qualified GHC.Generics as G
 import Ledger
-import NodeCommandLine
 import Serokell.Communication.IPC
 import Transaction
 
@@ -26,8 +27,6 @@ data NodeState = NodeState
     , transactionPool :: MVar [Transaction]
     , conversation :: Conversation
     , nodeLedger :: MVar Ledger
-    -- , receiver :: ???
-    --, sender ::
     }
 
 initialNodeState :: NodeId -> Conversation -> IO NodeState
@@ -81,9 +80,20 @@ handleNodeExchange nodeState nodeExchange = do
     handleNodeMsg nodeState nodeExchange
     pure $ (NExchangeResp 1, NoAction)
 
-handleClientNodeExchange :: ClientNodeExchange
+nodeStatus :: NodeState -> IO NodeInfo
+nodeStatus nodeState = do
+    txSize <- readMVar (transactionPool nodeState)
+    blockChainSize <- readMVar (blockchain nodeState)
+    pure $
+        NodeInfo
+            (unNodeId (nodeId nodeState))
+            (length txSize)
+            (length blockChainSize)
+
+handleClientNodeExchange :: NodeState
+                         -> ClientNodeExchange
                          -> IO (ExchangeResponse, StateAction)
-handleClientNodeExchange clientNodeExchange =
+handleClientNodeExchange nodeState clientNodeExchange =
     case clientNodeExchange of
         (MakeTransfer transfer signature) -> do
             case verifyTransfer signature transfer of
@@ -94,6 +104,9 @@ handleClientNodeExchange clientNodeExchange =
                     pure $ (NExchangeResp 2, AddTransactionToNode tx)
                 False -> pure $ (NExchangeResp 4, NoAction)
         (AskBalance address) -> pure $ (NExchangeResp 3, NoAction)
+        FetchStatus -> do
+            nodeInfo <- (nodeStatus nodeState)
+            pure $ (StatusInfo nodeInfo, NoAction)
 
 commu :: NodeId -> Conversation -> IO Bool
 commu nodeId (cc@Conversation {..}) = do
@@ -102,8 +115,8 @@ commu nodeId (cc@Conversation {..}) = do
         forkIO
             ((do tId <- myThreadId
                  (putStrLn $
-                  "FORKING from " <> show tId <> ": NodeId " <> show nodeId)) <* do
-                 loopO nodeState)
+                  "FORKING from " <> show tId <> ": NodeId " <>
+                  show (unNodeId nodeId))) <* do loopO nodeState)
   where
     loopO :: NodeState -> IO ()
     loopO nodeState = loop
@@ -120,7 +133,7 @@ commu nodeId (cc@Conversation {..}) = do
                     (NExchange nodeExchange) ->
                         handleNodeExchange nodeState nodeExchange
                     (CExchange clientNodeExchange) ->
-                        handleClientNodeExchange clientNodeExchange
+                        handleClientNodeExchange nodeState clientNodeExchange
             case action of
                 NoAction -> pure ()
                 (AddTransactionToNode tx) -> do
@@ -136,5 +149,5 @@ nextStep :: String -> IO () -> IO ()
 nextStep "" io = putStrLn "Closed by peer!"
 nextStep _ io = io
 
-www :: NodeConfig -> IO ()
-www (NodeConfig {..}) = listenUnixSocket "sockets" nodeId (commu nodeId)
+www :: NodeId -> IO ()
+www nodeId = listenUnixSocket "sockets" nodeId (commu nodeId)

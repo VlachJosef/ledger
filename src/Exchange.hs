@@ -32,12 +32,22 @@ data ClientNodeExchange
     = MakeTransfer Transfer
                    Signature
     | AskBalance Address
+    | FetchStatus
     deriving (Show, G.Generic)
 
 instance Binary ClientNodeExchange
 
-data ExchangeResponse =
-    NExchangeResp Int
+data NodeInfo = NodeInfo
+    { nId :: Int
+    , txPoolCount :: Int
+    , blockCount :: Int
+    } deriving (Show, G.Generic)
+
+instance Binary NodeInfo
+
+data ExchangeResponse
+    = NExchangeResp Int
+    | StatusInfo NodeInfo
     deriving (Show, G.Generic)
 
 instance Binary ExchangeResponse
