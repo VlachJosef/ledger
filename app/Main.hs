@@ -5,4 +5,4 @@ import NodeCommandLine
 import Options.Applicative
 
 main :: IO ()
-main = (www . nodeId) =<< execParser aaaa
+main = www =<< execParser aaaa

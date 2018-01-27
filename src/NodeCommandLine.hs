@@ -53,6 +53,3 @@ argumentPR2 str =
              (fullDesc <> progDesc "Print a greeting for TARGET" <>
               header "hello - a test for optparse-applicative"))
         (words str)
-
-wwwwe2 :: IO String
-wwwwe2 = readLn

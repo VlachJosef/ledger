@@ -17,11 +17,12 @@ import Data.Semigroup
 import Exchange
 import qualified GHC.Generics as G
 import Ledger
+import NodeCommandLine
 import Serokell.Communication.IPC
 import Transaction
 
 data NodeState = NodeState
-    { nodeId :: NodeId
+    { nodeConfig :: NodeConfig
     , neighbours :: [NodeId]
     , blockchain :: MVar BlockChain
     , transactionPool :: MVar [Transaction]
@@ -29,14 +30,14 @@ data NodeState = NodeState
     , nodeLedger :: MVar Ledger
     }
 
-initialNodeState :: NodeId -> Conversation -> IO NodeState
-initialNodeState nodeId conversation = do
+initialNodeState :: NodeConfig -> Conversation -> IO NodeState
+initialNodeState nodeConfig conversation = do
     emptyBlockChain <- newMVar []
     emptyTransactionPool <- newMVar []
     ledger <- newMVar emptyLedger
     pure $
         NodeState
-            nodeId
+            nodeConfig
             []
             emptyBlockChain
             emptyTransactionPool
@@ -86,7 +87,7 @@ nodeStatus nodeState = do
     blockChainSize <- readMVar (blockchain nodeState)
     pure $
         NodeInfo
-            (unNodeId (nodeId nodeState))
+            (unNodeId ((nodeId . nodeConfig) nodeState))
             (length txSize)
             (length blockChainSize)
 
@@ -108,15 +109,16 @@ handleClientNodeExchange nodeState clientNodeExchange =
             nodeInfo <- (nodeStatus nodeState)
             pure $ (StatusInfo nodeInfo, NoAction)
 
-commu :: NodeId -> Conversation -> IO Bool
-commu nodeId (cc@Conversation {..}) = do
-    nodeState <- initialNodeState nodeId cc
+commu :: NodeConfig -> Conversation -> IO Bool
+commu nodeConfig (cc@Conversation {..}) = do
+    nodeState <- initialNodeState nodeConfig cc
     True <$
         forkIO
             ((do tId <- myThreadId
                  (putStrLn $
-                  "FORKING from " <> show tId <> ": NodeId " <>
-                  show (unNodeId nodeId))) <* do loopO nodeState)
+                  "Node " <> show (unNodeId $ nodeId nodeConfig) <>
+                  ". Forking new thread " <>
+                  show tId)) <* do loopO nodeState)
   where
     loopO :: NodeState -> IO ()
     loopO nodeState = loop
@@ -149,5 +151,6 @@ nextStep :: String -> IO () -> IO ()
 nextStep "" io = putStrLn "Closed by peer!"
 nextStep _ io = io
 
-www :: NodeId -> IO ()
-www nodeId = listenUnixSocket "sockets" nodeId (commu nodeId)
+www :: NodeConfig -> IO ()
+www nodeConfig =
+    listenUnixSocket "sockets" (nodeId nodeConfig) (commu nodeConfig)
