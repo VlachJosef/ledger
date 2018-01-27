@@ -1,4 +1,4 @@
-module CommandLine where
+module NodeCommandLine where
 
 import Data.Semigroup ((<>))
 import Options.Applicative
@@ -7,8 +7,8 @@ import Serokell.Communication.IPC
 instance Show NodeId where
     show (NodeId id) = show id
 
-data CLIArguments = CLIArguments
-    { id :: NodeId
+data NodeConfig = NodeConfig
+    { nodeId :: NodeId
     , nodeCount :: Int
     , socketDir :: String
     , disconnectTimeout :: Int
@@ -16,9 +16,9 @@ data CLIArguments = CLIArguments
     , resyncTimeout :: Int
     } deriving (Show)
 
-argumentP2 :: Parser CLIArguments
+argumentP2 :: Parser NodeConfig
 argumentP2 =
-    CLIArguments <$>
+    NodeConfig <$>
     (NodeId <$> argument auto (metavar "ID" <> help "Target for the greeting0")) <*>
     argument
         auto
@@ -37,14 +37,14 @@ argumentP2 =
         auto
         (metavar "RESYNC_TIMEOUT" <> help "Timeout for ledger synchronization")
 
-aaaa :: ParserInfo CLIArguments
+aaaa :: ParserInfo NodeConfig
 aaaa =
     (info
          (argumentP2 <**> helper)
          (fullDesc <> progDesc "Print a greeting for TARGET" <>
           header "hello - a test for optparse-applicative"))
 
-argumentPR2 :: String -> ParserResult CLIArguments
+argumentPR2 :: String -> ParserResult NodeConfig
 argumentPR2 str =
     execParserPure
         (prefs showHelpOnError)

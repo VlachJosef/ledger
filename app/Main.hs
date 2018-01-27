@@ -1,7 +1,7 @@
 module Main where
 
-import CommandLine
-import Lib
+import Node
+import NodeCommandLine
 import Options.Applicative
 
 main :: IO ()
