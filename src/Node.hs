@@ -2,11 +2,12 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 module Node
-    ( www
+    ( establishClusterConnection
     ) where
 
 import Block
 import Control.Concurrent
+import Control.Exception
 import Crypto.Sign.Ed25519 (Signature)
 import Data.Binary
 import Data.ByteString (ByteString)
@@ -115,16 +116,41 @@ handleClientNodeExchange nodeState clientNodeExchange =
             nodeInfo <- (nodeStatus nodeState)
             pure $ (StatusInfo nodeInfo, NoAction)
 
+neighbourHandler :: NodeId -> Conversation -> IO ()
+neighbourHandler nodeId Conversation {..} = do
+    putStrLn $ "CONNECTED to nodeId " <> show (unNodeId nodeId)
+    x <- recv
+    putStrLn $ "CONNECTED and receind nodeId " <> show (unNodeId nodeId)
+    pure ()
+
+connectToNeighbour :: NodeId -> IO ()
+connectToNeighbour nodeId =
+    try (connectToUnixSocket "sockets" nodeId (neighbourHandler nodeId)) >>=
+    ssss nodeId
+
+ssss :: NodeId -> Either IOException a -> IO ()
+ssss nodeId (Right aa) =
+    putStrLn $ "OK connection to " <> show (unNodeId nodeId) <> " successful!!!"
+ssss nodeId (Left ex) = do
+    putStrLn
+        ("Connection to nodeId : " <> show (unNodeId nodeId) <> " failed: " <>
+         show ex)
+    putStrLn ("Attempting to reconnect in 10s")
+    (threadDelay $ 10 * 1000 * 1000)
+    putStrLn
+        ("Trying reestablish connection with nodeId " <> show (unNodeId nodeId))
+    connectToNeighbour nodeId
+
 commu :: NodeConfig -> Conversation -> IO Bool
-commu nodeConfig (cc@Conversation {..}) = do
-    nodeState <- initialNodeState nodeConfig cc
-    True <$
+commu nc (cc@Conversation {..}) = do
+    nodeState <- initialNodeState nc cc
+    let myId = show (unNodeId $ nodeId nc)
+    True <$ do
         forkIO
             ((do tId <- myThreadId
                  (putStrLn $
-                  "Node " <> show (unNodeId $ nodeId nodeConfig) <>
-                  ". Forking new thread " <>
-                  show tId)) <* do loopO nodeState)
+                  "Node " <> myId <> ". Forking new thread " <> show tId)) <* do
+                 loopO nodeState)
   where
     loopO :: NodeState -> IO ()
     loopO nodeState = loop
@@ -133,7 +159,12 @@ commu nodeConfig (cc@Conversation {..}) = do
         loop = do
             input <- recv
             tId <- myThreadId
-            putStrLn "Receiver some input"
+            putStrLn $
+                "Node " <> (show . unNodeId . nodeId . nodeConfig) nodeState <>
+                " threadId " <>
+                show tId <>
+                " received some input " <>
+                (show (length (BS.unpack input)))
             let exchange = toExchange input
             putStrLn $ "Receiver exhange" <> show exchange
             (er, action) <-
@@ -157,6 +188,30 @@ nextStep :: String -> IO () -> IO ()
 nextStep "" io = putStrLn "Closed by peer!"
 nextStep _ io = io
 
-www :: NodeConfig -> IO ()
-www nodeConfig =
+establishClusterConnection :: NodeConfig -> IO ()
+establishClusterConnection nodeConfig = do
+    connectToNeighbours nodeConfig
+    listenForClientConnection nodeConfig
+
+logMessage :: NodeId -> NodeId -> String -> IO ()
+logMessage nodeId neighbourId msg =
+    let myId = show (unNodeId nodeId)
+    in putStrLn
+           ("Node " <> myId <> ". " <> msg <> " with node: " <>
+            show (unNodeId neighbourId))
+
+connectToNeighbours :: NodeConfig -> IO [ThreadId]
+connectToNeighbours nodeConfig =
+    let nodeNeighbours = (calculateNeighbours nodeConfig)
+        myId = nodeId nodeConfig
+    in do sequence $
+              (\nId ->
+                   forkIO
+                       (do logMessage myId nId "Trying to establish connecting"
+                           connectToNeighbour nId
+                           logMessage myId nId "Terminating connection")) <$>
+              nodeNeighbours
+
+listenForClientConnection :: NodeConfig -> IO ()
+listenForClientConnection nodeConfig =
     listenUnixSocket "sockets" (nodeId nodeConfig) (commu nodeConfig)

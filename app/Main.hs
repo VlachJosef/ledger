@@ -5,4 +5,4 @@ import NodeCommandLine
 import Options.Applicative
 
 main :: IO ()
-main = www =<< execParser aaaa
+main = establishClusterConnection =<< execParser aaaa

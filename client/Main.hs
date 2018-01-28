@@ -56,8 +56,15 @@ connectToNode :: ClientConfig -> SecretKey -> IO ()
 connectToNode clientConfig sk =
     trace
         "connectToNode CALLED"
-        (connectToUnixSocket "sockets" (NodeId 0) (connectNode clientConfig sk))
+        (connectToUnixSocket
+             "sockets"
+             (nodeId clientConfig)
+             (connectNode clientConfig sk))
 
 connectNode :: ClientConfig -> SecretKey -> Conversation -> IO ()
-connectNode clientConfig sk conversation =
+connectNode clientConfig sk conversation = do
+    putStrLn
+        ("Client id " <> (show . unNodeId . clientId) clientConfig <>
+         ". Connected to node id " <>
+         (show . unNodeId . nodeId) clientConfig)
     connectClient (NodeConversation conversation) clientConfig sk
