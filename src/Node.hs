@@ -7,6 +7,7 @@ module Node
 
 import Block
 import Control.Concurrent
+import Control.Concurrent.Chan
 import Control.Exception
 import Crypto.Sign.Ed25519 (Signature)
 import Data.Binary
@@ -28,6 +29,7 @@ data NodeState = NodeState
     , blockchain :: MVar BlockChain
     , transactionPool :: MVar [Transaction]
     , nodeLedger :: MVar Ledger
+    , broadcastChannel :: Chan Transaction
     }
 
 calculateNeighbours :: NodeConfig -> [NodeId]
@@ -40,6 +42,7 @@ initialNodeState nodeConfig = do
     emptyBlockChain <- newMVar []
     emptyTransactionPool <- newMVar []
     ledger <- newMVar emptyLedger
+    chan <- newChan
     pure $
         NodeState
             nodeConfig
@@ -47,6 +50,7 @@ initialNodeState nodeConfig = do
             emptyBlockChain
             emptyTransactionPool
             ledger
+            chan
 
 mineblock :: NodeState -> Block
 mineblock nodeState = undefined
@@ -66,6 +70,8 @@ handleNodeMsg nodeState msg =
                     putStrLn $
                         "Transaction successsfully added. Total transactios: " <>
                         (show $ length txs + 1)
+                    putStrLn $ "Writing transactios to channel"
+                    writeChan (broadcastChannel nodeState) tx
         QueryBlock n -> do
             blocks <- readMVar (blockchain nodeState)
             let block = find (\b -> Block.index b == n) blocks
@@ -113,22 +119,30 @@ handleClientNodeExchange nodeState clientNodeExchange =
             nodeInfo <- (nodeStatus nodeState)
             pure $ (StatusInfo nodeInfo, NoAction)
 
-neighbourHandler :: NodeId -> Conversation -> IO ()
-neighbourHandler nodeId Conversation {..} = do
-    putStrLn $ "CONNECTED to nodeId " <> show (unNodeId nodeId)
-    x <- recv
+neighbourHandler :: Chan Transaction -> NodeId -> Conversation -> IO ()
+neighbourHandler broadcastChannel nodeId cc @ Conversation {..} = do
+    putStrLn $
+        "CONNECTED to nodeId " <> show (unNodeId nodeId) <>
+        ", reading from channel"
+    transaction <- readChan broadcastChannel
+    putStrLn $ "TRANASACTIOB to boradcase " <> show transaction
+    response <- send (BL.toStrict $ encode (NExchange $ AddTransaction transaction)) *> recv
     putStrLn $ "CONNECTED and receind nodeId " <> show (unNodeId nodeId)
-    pure ()
+    neighbourHandler broadcastChannel nodeId cc
 
-connectToNeighbour :: NodeId -> IO ()
-connectToNeighbour nodeId =
-    try (connectToUnixSocket "sockets" nodeId (neighbourHandler nodeId)) >>=
-    ssss nodeId
+connectToNeighbour :: Chan Transaction -> NodeId -> IO ()
+connectToNeighbour broadcastChan nodeId =
+    try
+        (connectToUnixSocket
+             "sockets"
+             nodeId
+             (neighbourHandler broadcastChan nodeId)) >>=
+    ssss broadcastChan nodeId
 
-ssss :: NodeId -> Either IOException a -> IO ()
-ssss nodeId (Right aa) =
+ssss :: Chan Transaction -> NodeId -> Either IOException a -> IO ()
+ssss broadcastChan nodeId (Right aa) =
     putStrLn $ "OK connection to " <> show (unNodeId nodeId) <> " successful!!!"
-ssss nodeId (Left ex) = do
+ssss broadcastChan nodeId (Left ex) = do
     putStrLn
         ("Connection to nodeId : " <> show (unNodeId nodeId) <> " failed: " <>
          show ex)
@@ -136,7 +150,7 @@ ssss nodeId (Left ex) = do
     (threadDelay $ 10 * 1000 * 1000)
     putStrLn
         ("Trying reestablish connection with nodeId " <> show (unNodeId nodeId))
-    connectToNeighbour nodeId
+    connectToNeighbour broadcastChan nodeId
 
 nodeIdFromState :: NodeState -> NodeId
 nodeIdFromState = nodeId . nodeConfig
@@ -209,7 +223,8 @@ connectToNeighbours nodeState =
               (\nId ->
                    forkIO
                        (do logMessage myId nId "Trying to establish connecting"
-                           connectToNeighbour nId
+                           myChan <- dupChan (broadcastChannel nodeState)
+                           connectToNeighbour myChan nId
                            logMessage myId nId "Terminating connection")) <$>
               nodeNeighbours
 
