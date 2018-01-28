@@ -27,7 +27,6 @@ data NodeState = NodeState
     , neighbours :: [NodeId]
     , blockchain :: MVar BlockChain
     , transactionPool :: MVar [Transaction]
-    , conversation :: Conversation
     , nodeLedger :: MVar Ledger
     }
 
@@ -36,8 +35,8 @@ calculateNeighbours nodeConfig =
     let nId = (unNodeId . nodeId) nodeConfig
     in NodeId <$> filter (\a -> a /= nId) [0 .. nodeCount nodeConfig]
 
-initialNodeState :: NodeConfig -> Conversation -> IO NodeState
-initialNodeState nodeConfig conversation = do
+initialNodeState :: NodeConfig -> IO NodeState
+initialNodeState nodeConfig = do
     emptyBlockChain <- newMVar []
     emptyTransactionPool <- newMVar []
     ledger <- newMVar emptyLedger
@@ -47,7 +46,6 @@ initialNodeState nodeConfig conversation = do
             (calculateNeighbours nodeConfig)
             emptyBlockChain
             emptyTransactionPool
-            conversation
             ledger
 
 mineblock :: NodeState -> Block
@@ -73,8 +71,7 @@ handleNodeMsg nodeState msg =
             let block = find (\b -> Block.index b == n) blocks
             case block of
                 Nothing -> pure ()
-                (Just b) ->
-                    (send . conversation) nodeState (BL.toStrict $ encode b)
+                (Just b) -> pure () -- (send . conversation) nodeState (BL.toStrict $ encode b)
         AddBlock block -> undefined
 
 toExchange :: ByteString -> Exchange
@@ -141,10 +138,14 @@ ssss nodeId (Left ex) = do
         ("Trying reestablish connection with nodeId " <> show (unNodeId nodeId))
     connectToNeighbour nodeId
 
-commu :: NodeConfig -> Conversation -> IO Bool
-commu nc (cc@Conversation {..}) = do
-    nodeState <- initialNodeState nc cc
-    let myId = show (unNodeId $ nodeId nc)
+nodeIdFromState :: NodeState -> NodeId
+nodeIdFromState = nodeId . nodeConfig
+
+nodeIdFromStateStr :: NodeState -> String
+nodeIdFromStateStr = show . unNodeId . nodeIdFromState
+
+commu :: NodeState -> Conversation -> IO Bool
+commu nodeState conversation = do
     True <$ do
         forkIO
             ((do tId <- myThreadId
@@ -152,17 +153,16 @@ commu nc (cc@Conversation {..}) = do
                   "Node " <> myId <> ". Forking new thread " <> show tId)) <* do
                  loopO nodeState)
   where
+    myId = nodeIdFromStateStr nodeState
     loopO :: NodeState -> IO ()
     loopO nodeState = loop
       where
         loop :: IO ()
         loop = do
-            input <- recv
+            input <- recv conversation
             tId <- myThreadId
             putStrLn $
-                "Node " <> (show . unNodeId . nodeId . nodeConfig) nodeState <>
-                " threadId " <>
-                show tId <>
+                "Node " <> myId <> " threadId " <> show tId <>
                 " received some input " <>
                 (show (length (BS.unpack input)))
             let exchange = toExchange input
@@ -178,7 +178,7 @@ commu nc (cc@Conversation {..}) = do
                 (AddTransactionToNode tx) -> do
                     handleNodeExchange nodeState (AddTransaction tx)
                     pure ()
-            send (BL.toStrict (encode er))
+            send conversation (BL.toStrict (encode er))
           -- let ioAction =
           --         case processCommand command ledger of
           -- _ <- (try ioAction) >>= ssss2
@@ -190,8 +190,9 @@ nextStep _ io = io
 
 establishClusterConnection :: NodeConfig -> IO ()
 establishClusterConnection nodeConfig = do
-    connectToNeighbours nodeConfig
-    listenForClientConnection nodeConfig
+    nodeState <- initialNodeState nodeConfig
+    connectToNeighbours nodeState
+    listenForClientConnection nodeState
 
 logMessage :: NodeId -> NodeId -> String -> IO ()
 logMessage nodeId neighbourId msg =
@@ -200,10 +201,10 @@ logMessage nodeId neighbourId msg =
            ("Node " <> myId <> ". " <> msg <> " with node: " <>
             show (unNodeId neighbourId))
 
-connectToNeighbours :: NodeConfig -> IO [ThreadId]
-connectToNeighbours nodeConfig =
-    let nodeNeighbours = (calculateNeighbours nodeConfig)
-        myId = nodeId nodeConfig
+connectToNeighbours :: NodeState -> IO [ThreadId]
+connectToNeighbours nodeState =
+    let nodeNeighbours = (neighbours nodeState)
+        myId = nodeIdFromState nodeState
     in do sequence $
               (\nId ->
                    forkIO
@@ -212,6 +213,6 @@ connectToNeighbours nodeConfig =
                            logMessage myId nId "Terminating connection")) <$>
               nodeNeighbours
 
-listenForClientConnection :: NodeConfig -> IO ()
-listenForClientConnection nodeConfig =
-    listenUnixSocket "sockets" (nodeId nodeConfig) (commu nodeConfig)
+listenForClientConnection :: NodeState -> IO ()
+listenForClientConnection nodeState = do
+    listenUnixSocket "sockets" (nodeIdFromState nodeState) (commu nodeState)
