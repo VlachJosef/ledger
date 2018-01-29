@@ -127,10 +127,10 @@ deriveAddress = Address . encodePublicKey
 
 txInfo :: Transaction -> [String]
 txInfo tx = let
-  from2 = (BS.unpack . rawAddress . deriveAddress . from . transfer) tx
+  genesisPk = (BS.unpack . rawAddress . deriveAddress . from . transfer) tx
   to2 = (BS.unpack . rawAddress . to . transfer) tx
   amount2 = (show . amount . transfer) tx
-  in [from2, to2, amount2]
+  in [genesisPk, to2, amount2]
 
 txsInfo :: [Transaction] -> [[String]]
 txsInfo txs = txInfo <$> txs
@@ -166,11 +166,18 @@ handleClientNodeExchange nodeState clientNodeExchange =
             case verifyTransfer signature transfer of
                 True -> do
                     putStrLn $ "SIGNTURE VERYFIED " <> show transfer
-                    times <- now
-                    let tx = Transaction transfer signature times
+                    timestamp <- now
+                    let tx = Transaction transfer signature timestamp
                     pure $ (NExchangeResp 2, AddTransactionToNode tx)
                 False -> pure $ (NExchangeResp 4, NoAction)
         (AskBalance address) -> pure $ (NExchangeResp 3, NoAction)
+        (Register address) -> do
+                    let genesisPk = (from . fst) genesisTransfer
+                    let transfer = Transfer genesisPk address 1000
+                    let signature = signTransfer (snd nodeKeyPair) transfer
+                    timestamp <- now
+                    let tx = Transaction transfer signature timestamp
+                    pure $ ((StringResp "Registration successful"), AddTransactionToNode tx)
         FetchStatus -> do
             nodeInfo <- nodeStatus nodeState
             pure $ (StatusInfo nodeInfo, NoAction)

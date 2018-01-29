@@ -32,6 +32,7 @@ import GHC.Generics
 import NodeCommandLine
 import Text.Read
 import Transaction
+import Utils
 
 import qualified Data.Map as Map
 import Data.Semigroup
@@ -46,6 +47,7 @@ data PossibleCmd
 
 data ClientCmd
     = StatusCmd
+    | RegisterCmd
     | TransferCmd Address
                   Int
 
@@ -59,6 +61,7 @@ toClientCmd :: S.ByteString -> PossibleCmd
 toClientCmd bs =
     case BS.words bs of
         ["status"] -> Cmd StatusCmd
+        ["register"] -> Cmd RegisterCmd
         ["SUBMIT", address, amount] ->
             case convertToInt amount of
                 Nothing ->
@@ -75,6 +78,12 @@ nodeCommunication sk (NodeConversation Conversation {..}) clientCmd =
     case clientCmd of
         StatusCmd -> do
             let payload = CExchange FetchStatus
+            let encodedTransfer = BL.toStrict (encode payload)
+            response <- send encodedTransfer *> recv
+            pure $ decode (BL.fromStrict response)
+        RegisterCmd -> do
+            let address = (Address . encodePublicKey) (toPublicKey sk)
+            let payload = CExchange $ Register address
             let encodedTransfer = BL.toStrict (encode payload)
             response <- send encodedTransfer *> recv
             pure $ decode (BL.fromStrict response)
@@ -106,6 +115,7 @@ connect clientId sk nc (Conversation {..}) = do
                 exchangeResp <- comm clientCmd
                 case exchangeResp of
                     (NExchangeResp x) -> send $ response (show x)
+                    (StringResp message) -> send $ response message
                     (StatusInfo nodeInfo) ->
                         send $ response (prettyPrintStatusInfo nodeInfo)
             ErrorCmd error -> send $ response error

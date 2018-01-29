@@ -34,6 +34,7 @@ data ClientNodeExchange
                    Signature
     | AskBalance Address
     | FetchStatus
+    | Register Address
     deriving (Show, G.Generic)
 
 instance Binary ClientNodeExchange
@@ -50,6 +51,7 @@ instance Binary NodeInfo
 
 data ExchangeResponse
     = NExchangeResp Int
+    | StringResp String
     | StatusInfo NodeInfo
     deriving (Show, G.Generic)
 
