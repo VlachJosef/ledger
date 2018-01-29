@@ -106,11 +106,26 @@ connect clientId sk nc (Conversation {..}) = do
                 exchangeResp <- comm clientCmd
                 case exchangeResp of
                     (NExchangeResp x) -> send $ response (show x)
-                    (StatusInfo statusInfo) -> send $ response (show statusInfo)
+                    (StatusInfo nodeInfo) ->
+                        send $ response (prettyPrintStatusInfo nodeInfo)
             ErrorCmd error -> send $ response error
             UnknownCmd -> send $ response "Unkown command"
         putStrLn $ "Client command received " <> show tId
         nextStep (BS.unpack input) loop
+
+prettyPrintStatusInfo :: NodeInfo -> String
+prettyPrintStatusInfo NodeInfo {..} =
+    "NodeId         : " <> (show nId) <> "\n" <> "TxPoolCount    : " <>
+    (show txPoolCount) <>
+    "\n" <>
+    "Neighbour nodes: " <>
+    (show neighbourNodes) <>
+    "\n" <>
+    "Block count    : " <>
+    (show blockCount) <>
+    "\n" <>
+    "Blocks Info    : " <>
+    (foldl (<>) "\n" blocksInfo)
 
 nextStep :: String -> IO () -> IO ()
 nextStep "" io = putStrLn "Closed by peer!"

@@ -9,6 +9,7 @@ import Data.Binary
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import Data.List
+import Data.List.NonEmpty
 import qualified GHC.Generics as G
 import Serokell.Communication.IPC
 import Transaction
@@ -42,6 +43,7 @@ data NodeInfo = NodeInfo
     , txPoolCount :: Int
     , blockCount :: Int
     , neighbourNodes :: [Int]
+    , blocksInfo :: NonEmpty String
     } deriving (Show, G.Generic)
 
 instance Binary NodeInfo
@@ -56,3 +58,7 @@ instance Binary ExchangeResponse
 data StateAction
     = AddTransactionToNode Transaction
     | NoAction
+
+data Broadcast
+    = TxBroadcast Transaction
+    | BlockBroadcast Block

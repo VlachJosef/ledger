@@ -5,16 +5,21 @@ module Node
     ( establishClusterConnection
     ) where
 
+import Data.Functor
 import Block
 import Control.Concurrent
 import Control.Concurrent.Chan
 import Control.Exception
-import Crypto.Sign.Ed25519 (Signature)
+import Crypto.Sign.Ed25519 (PublicKey(..), Signature, unSignature)
 import Data.Binary
 import Data.ByteString (ByteString)
+import Data.ByteString.Base58
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Digest.Pure.SHA as SHA
 import Data.List
+import Data.List.NonEmpty( NonEmpty( (:|) ), (<|) )
+import qualified Data.List.NonEmpty as NEL
 import Data.Semigroup
 import Exchange
 import qualified GHC.Generics as G
@@ -22,6 +27,7 @@ import Ledger
 import NodeCommandLine
 import Serokell.Communication.IPC
 import Transaction
+import Text.PrettyPrint.Boxes as Boxes (render, vcat, hsep, left, text)
 
 data NodeState = NodeState
     { nodeConfig :: NodeConfig
@@ -29,7 +35,7 @@ data NodeState = NodeState
     , blockchain :: MVar BlockChain
     , transactionPool :: MVar [Transaction]
     , nodeLedger :: MVar Ledger
-    , broadcastChannel :: Chan Transaction
+    , broadcastChannel :: Chan Broadcast
     }
 
 calculateNeighbours :: NodeConfig -> [NodeId]
@@ -39,7 +45,7 @@ calculateNeighbours nodeConfig =
 
 initialNodeState :: NodeConfig -> IO NodeState
 initialNodeState nodeConfig = do
-    emptyBlockChain <- newMVar []
+    emptyBlockChain <- newMVar $ genesisBlock :| []
     emptyTransactionPool <- newMVar []
     ledger <- newMVar emptyLedger
     chan <- newChan
@@ -52,8 +58,27 @@ initialNodeState nodeConfig = do
             ledger
             chan
 
-mineblock :: NodeState -> Block
-mineblock nodeState = undefined
+mineblock :: NodeState -> IO ()
+mineblock nodeState = loop where
+
+    loop = do
+      threadDelay $ 15 * 1000 * 1000
+      txs <- readMVar $ transactionPool nodeState
+      if null txs then putStrLn "No Transaction to mine." else mine txs
+      loop
+
+    mine :: [Transaction] -> IO ()
+    mine txs = do
+      chain <- readMVar $ blockchain nodeState
+      timestamp <- now
+      let lastBlock = NEL.head chain
+      let nextBlockId = 1 + index lastBlock
+      let nextBlock = Block nextBlockId txs timestamp
+      modifyMVar_ (transactionPool nodeState) (\txs2 -> pure $ txs2 \\ txs)
+      modifyMVar_ (blockchain nodeState) (\blocks -> pure $ nextBlock <| blocks)
+      writeChan (broadcastChannel nodeState) (BlockBroadcast nextBlock)
+      putStrLn $ "Mined block " <> show nextBlockId <> " of " <> show (length txs) <> " transactions"
+
 
 handleNodeMsg :: NodeState -> NodeExchange -> IO ()
 handleNodeMsg nodeState msg =
@@ -71,14 +96,20 @@ handleNodeMsg nodeState msg =
                         "Transaction successsfully added. Total transactios: " <>
                         (show $ length txs + 1)
                     putStrLn $ "Writing transactios to channel"
-                    writeChan (broadcastChannel nodeState) tx
+                    writeChan (broadcastChannel nodeState) (TxBroadcast tx)
         QueryBlock n -> do
             blocks <- readMVar (blockchain nodeState)
             let block = find (\b -> Block.index b == n) blocks
             case block of
                 Nothing -> pure ()
                 (Just b) -> pure () -- (send . conversation) nodeState (BL.toStrict $ encode b)
-        AddBlock block -> undefined
+        AddBlock block -> do
+          putStrLn $ "Adding block " <> show (index block) <> " to the blockchain."
+          -- Remove transaction from transaction pool which are in the newly added block
+          let txs = transactions block
+          modifyMVar_ (transactionPool nodeState) (\txs2 -> pure $ txs2 \\ txs)
+          -- Add block itself
+          modifyMVar_ (blockchain nodeState) (\blocks -> pure $ block <| blocks)
 
 toExchange :: ByteString -> Exchange
 toExchange = decode . BL.fromStrict
@@ -90,16 +121,44 @@ handleNodeExchange nodeState nodeExchange = do
     handleNodeMsg nodeState nodeExchange
     pure $ (NExchangeResp 1, NoAction)
 
+hash :: ByteString -> ByteString
+hash = BL.toStrict . SHA.bytestringDigest . SHA.sha256 . BL.fromStrict
+
+deriveAddress :: PublicKey -> Address
+deriveAddress (PublicKey pk) =
+    Address $ encodeBase58 bitcoinAlphabet (hash pk)
+
+txInfo :: Transaction -> [String]
+txInfo tx = let
+  from2 = (BS.unpack . rawAddress . deriveAddress . from . transfer) tx
+  to2 = (BS.unpack . rawAddress . to . transfer) tx
+  amount2 = (show . amount . transfer) tx
+  in [from2, to2, amount2]
+
+txsInfo :: [Transaction] -> [[String]]
+txsInfo txs = txInfo <$> txs
+
+blockInfo :: Block -> String
+blockInfo block = let
+  blockIndex = (show . index) block
+  tsBlock = Block.timestamp block
+  txs = (txsInfo . transactions) block
+  txsWithBlockId = txs ++ [[blockIndex]]
+  txsBox = render $ hsep 2 left (map (vcat left . map Boxes.text) (transpose txsWithBlockId))
+  in txsBox
+
 nodeStatus :: NodeState -> IO NodeInfo
 nodeStatus nodeState = do
     txSize <- readMVar (transactionPool nodeState)
-    blockChainSize <- readMVar (blockchain nodeState)
+    blockChain <- readMVar (blockchain nodeState)
+    let blocksInfo = blockInfo <$> blockChain
     pure $
         NodeInfo
             (unNodeId ((nodeId . nodeConfig) nodeState))
             (length txSize)
-            (length blockChainSize)
+            (length blockChain)
             (unNodeId <$> neighbours nodeState)
+            blocksInfo
 
 handleClientNodeExchange :: NodeState
                          -> ClientNodeExchange
@@ -116,21 +175,26 @@ handleClientNodeExchange nodeState clientNodeExchange =
                 False -> pure $ (NExchangeResp 4, NoAction)
         (AskBalance address) -> pure $ (NExchangeResp 3, NoAction)
         FetchStatus -> do
-            nodeInfo <- (nodeStatus nodeState)
+            nodeInfo <- nodeStatus nodeState
             pure $ (StatusInfo nodeInfo, NoAction)
 
-neighbourHandler :: Chan Transaction -> NodeId -> Conversation -> IO ()
+
+broadcastToExchange :: Broadcast -> NodeExchange
+broadcastToExchange (TxBroadcast tx) = AddTransaction tx
+broadcastToExchange (BlockBroadcast block) = AddBlock block
+
+neighbourHandler :: Chan Broadcast -> NodeId -> Conversation -> IO ()
 neighbourHandler broadcastChannel nodeId cc @ Conversation {..} = do
     putStrLn $
         "CONNECTED to nodeId " <> show (unNodeId nodeId) <>
         ", reading from channel"
-    transaction <- readChan broadcastChannel
-    putStrLn $ "TRANASACTIOB to boradcase " <> show transaction
-    response <- send (BL.toStrict $ encode (NExchange $ AddTransaction transaction)) *> recv
+    broadcast <- readChan broadcastChannel
+    --putStrLn $ "TRANASACTIOB to boradcase " <> show broadcast
+    response <- send (BL.toStrict $ encode (NExchange $ broadcastToExchange broadcast)) *> recv
     putStrLn $ "CONNECTED and receind nodeId " <> show (unNodeId nodeId)
     neighbourHandler broadcastChannel nodeId cc
 
-connectToNeighbour :: Chan Transaction -> NodeId -> IO ()
+connectToNeighbour :: Chan Broadcast -> NodeId -> IO ()
 connectToNeighbour broadcastChan nodeId =
     try
         (connectToUnixSocket
@@ -139,7 +203,7 @@ connectToNeighbour broadcastChan nodeId =
              (neighbourHandler broadcastChan nodeId)) >>=
     ssss broadcastChan nodeId
 
-ssss :: Chan Transaction -> NodeId -> Either IOException a -> IO ()
+ssss :: Chan Broadcast -> NodeId -> Either IOException a -> IO ()
 ssss broadcastChan nodeId (Right aa) =
     putStrLn $ "OK connection to " <> show (unNodeId nodeId) <> " successful!!!"
 ssss broadcastChan nodeId (Left ex) = do
@@ -202,9 +266,14 @@ nextStep :: String -> IO () -> IO ()
 nextStep "" io = putStrLn "Closed by peer!"
 nextStep _ io = io
 
+startMinerThread :: NodeState -> IO ()
+startMinerThread nodeState = void $ forkIO $ do
+  mineblock nodeState
+
 establishClusterConnection :: NodeConfig -> IO ()
 establishClusterConnection nodeConfig = do
     nodeState <- initialNodeState nodeConfig
+    startMinerThread nodeState
     connectToNeighbours nodeState
     listenForClientConnection nodeState
 

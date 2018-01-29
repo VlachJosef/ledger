@@ -3,6 +3,7 @@
 module Block where
 
 import Data.Binary
+import qualified Data.List.NonEmpty as NEL
 import qualified GHC.Generics as G
 import Time
 import Transaction
@@ -17,4 +18,7 @@ data Block = Block
 
 instance Binary Block
 
-type BlockChain = [Block]
+type BlockChain = NEL.NonEmpty Block
+
+genesisBlock :: Block
+genesisBlock = Block 1 [] 0
