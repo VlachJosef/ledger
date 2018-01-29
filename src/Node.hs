@@ -26,6 +26,7 @@ import qualified GHC.Generics as G
 import Ledger
 import NodeCommandLine
 import Serokell.Communication.IPC
+import Utils
 import Transaction
 import Text.PrettyPrint.Boxes as Boxes (render, vcat, hsep, left, text)
 
@@ -121,12 +122,8 @@ handleNodeExchange nodeState nodeExchange = do
     handleNodeMsg nodeState nodeExchange
     pure $ (NExchangeResp 1, NoAction)
 
-hash :: ByteString -> ByteString
-hash = BL.toStrict . SHA.bytestringDigest . SHA.sha256 . BL.fromStrict
-
 deriveAddress :: PublicKey -> Address
-deriveAddress (PublicKey pk) =
-    Address $ encodeBase58 bitcoinAlphabet (hash pk)
+deriveAddress = Address . encodePublicKey
 
 txInfo :: Transaction -> [String]
 txInfo tx = let
