@@ -45,6 +45,7 @@ data NodeInfo = NodeInfo
     , blockCount :: Int
     , neighbourNodes :: [Int]
     , blocksInfo :: NonEmpty String
+    , ledger :: String
     } deriving (Show, G.Generic)
 
 instance Binary NodeInfo

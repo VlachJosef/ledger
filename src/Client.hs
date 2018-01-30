@@ -135,7 +135,9 @@ prettyPrintStatusInfo NodeInfo {..} =
     (show blockCount) <>
     "\n" <>
     "Blocks Info    : " <>
-    (foldl (<>) "\n" blocksInfo)
+    (foldl (<>) "\n" blocksInfo) <>
+    "Ledger         : " <>
+    ledger
 
 nextStep :: String -> IO () -> IO ()
 nextStep "" io = putStrLn "Closed by peer!"

@@ -28,7 +28,7 @@ import GHC.Generics
 import Text.Read
 import Transaction
 
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import Data.Semigroup
 import Serokell.Communication.IPC
 
@@ -36,6 +36,7 @@ import qualified Network.Socket as Net
 
 data LedgerError
     = AddressNotFound Address
+    | InsufficientBalance Address
     | NotEnoughBalance Address
                        Balance
     deriving (Eq, Show)
@@ -46,29 +47,22 @@ newtype TxId = TxId
 
 type Balance = Int
 
-type MBalance = MVar Balance
-
+-- type MBalance = MVar Balance
+-- newtype Ledger =
+--     Ledger (Map Address MBalance)
+--     deriving (Eq, Generic)
 newtype Ledger =
-    Ledger (Map Address MBalance)
-    deriving (Eq, Generic)
-
-newtype LedgerFreeze =
-    LedgerFreeze (Map Address Balance)
+    Ledger (Map Address Balance)
     deriving (Eq, Generic, Show)
 
 newtype LedgerState =
     LedgerState (MVar Ledger)
     deriving (Eq, Generic)
 
-freeze :: Ledger -> IO LedgerFreeze
-freeze (Ledger ledger) = LedgerFreeze <$> traverse readMVar ledger
-
-unFreeze :: LedgerFreeze -> IO Ledger
-unFreeze (LedgerFreeze ledgerFreeze) = Ledger <$> traverse newMVar ledgerFreeze
-
-instance Newtype Ledger
-
-instance Binary LedgerFreeze
-
-emptyLedger :: Ledger
-emptyLedger = Ledger Map.empty
+-- freeze :: Ledger -> IO LedgerFreeze
+-- freeze (Ledger ledger) = LedgerFreeze <$> traverse readMVar ledger
+-- unFreeze :: LedgerFreeze -> IO Ledger
+-- unFreeze (LedgerFreeze ledgerFreeze) = Ledger <$> traverse newMVar ledgerFreeze
+instance Newtype Ledger--instance Binary LedgerFreeze
+-- emptyLedger :: Ledger
+-- emptyLedger = Ledger Map.empty

@@ -5,7 +5,10 @@ module Node
     ( establishClusterConnection
     ) where
 
+import Control.Monad.IO.Class
+import Control.Monad.Reader
 import Data.Functor
+import Debug.Trace
 import Block
 import Control.Concurrent
 import Control.Concurrent.Chan
@@ -17,7 +20,8 @@ import Data.ByteString.Base58
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Digest.Pure.SHA as SHA
-import Data.List
+import qualified Data.Map.Strict as Map
+import Data.List as List
 import Data.List.NonEmpty( NonEmpty( (:|) ), (<|) )
 import qualified Data.List.NonEmpty as NEL
 import Data.Semigroup
@@ -48,7 +52,7 @@ initialNodeState :: NodeConfig -> IO NodeState
 initialNodeState nodeConfig = do
     emptyBlockChain <- newMVar $ genesisBlock :| []
     emptyTransactionPool <- newMVar []
-    ledger <- newMVar emptyLedger
+    ledger <- newMVar (Ledger genesisLedger)
     chan <- newChan
     pure $
         NodeState
@@ -75,8 +79,7 @@ mineblock nodeState = loop where
       let lastBlock = NEL.head chain
       let nextBlockId = 1 + index lastBlock
       let nextBlock = Block nextBlockId txs timestamp
-      modifyMVar_ (transactionPool nodeState) (\txs2 -> pure $ txs2 \\ txs)
-      modifyMVar_ (blockchain nodeState) (\blocks -> pure $ nextBlock <| blocks)
+      addBlock nextBlock nodeState
       writeChan (broadcastChannel nodeState) (BlockBroadcast nextBlock)
       putStrLn $ "Mined block " <> show nextBlockId <> " of " <> show (length txs) <> " transactions"
 
@@ -88,7 +91,7 @@ handleNodeMsg nodeState msg =
             txs <- readMVar (transactionPool nodeState)
             let hasTx = any (\t -> t == tx) txs
             if hasTx
-                then putStrLn "Transaction aready exists"
+                then putStrLn $ "Transaction aready exists: " <> show tx
                 else do
                     modifyMVar_
                         (transactionPool nodeState)
@@ -104,13 +107,56 @@ handleNodeMsg nodeState msg =
             case block of
                 Nothing -> pure ()
                 (Just b) -> pure () -- (send . conversation) nodeState (BL.toStrict $ encode b)
-        AddBlock block -> do
-          putStrLn $ "Adding block " <> show (index block) <> " to the blockchain."
-          -- Remove transaction from transaction pool which are in the newly added block
-          let txs = transactions block
-          modifyMVar_ (transactionPool nodeState) (\txs2 -> pure $ txs2 \\ txs)
-          -- Add block itself
-          modifyMVar_ (blockchain nodeState) (\blocks -> pure $ block <| blocks)
+        AddBlock block -> addBlock block nodeState
+
+addBlock :: Block -> NodeState -> IO ()
+addBlock block nodeState = do
+  putStrLn $ "Adding block " <> show (index block) <> " to the blockchain."
+  -- Remove transaction from transaction pool which are in the newly added block
+  let txs = transactions block
+  modifyMVar_ (transactionPool nodeState) (\txs2 -> pure $ txs2 \\ txs)
+
+  -- Update Ledger
+  putStrLn $ "Reconciling ledger!"
+  let ledgerM = nodeLedger nodeState
+  ledger <- takeMVar ledgerM
+  let (errors, ledgerUpd) = applyTransactions ledger txs
+
+  reportProblems errors
+
+  putMVar ledgerM ledgerUpd
+
+  -- Add block itself
+  modifyMVar_ (blockchain nodeState) (\blocks -> pure $ block <| blocks)
+
+reportProblems :: [LedgerError] -> IO ()
+reportProblems errors = sequence_ $ (putStrLn . show) <$> errors
+
+applyTransactions :: Ledger -> [Transaction] -> ([LedgerError], Ledger)
+applyTransactions ledger = foldl applyTransaction ([], ledger)
+
+applyTransaction :: ([LedgerError], Ledger) -> Transaction -> ([LedgerError], Ledger)
+applyTransaction (errors, l@(Ledger ledger)) tx =
+  case res of
+    Left error -> (error : errors, l)
+    Right led -> (errors, led)
+  where
+    tran = transfer tx
+    fromAccount = (Address . encodePublicKey . from) tran
+    toAccount = to tran
+    amountToPay = amount tran
+
+    res = do
+      f <- balance l fromAccount
+      if f > amountToPay
+        then let ledgerUpd = Map.insertWith (flip (-)) fromAccount amountToPay ledger
+                 ledgerUpd2 = Map.insertWith (+) toAccount amountToPay ledgerUpd
+             in Right (Ledger ledgerUpd2)
+        else Left $ InsufficientBalance fromAccount
+
+balance :: Ledger -> Address -> Either LedgerError Balance
+balance (Ledger ledger) address =
+    maybe (Left $ AddressNotFound address) Right (Map.lookup address ledger)
 
 toExchange :: ByteString -> Exchange
 toExchange = decode . BL.fromStrict
@@ -148,6 +194,7 @@ nodeStatus :: NodeState -> IO NodeInfo
 nodeStatus nodeState = do
     txSize <- readMVar (transactionPool nodeState)
     blockChain <- readMVar (blockchain nodeState)
+    ledger <- readMVar (nodeLedger nodeState)
     let blocksInfo = blockInfo <$> blockChain
     pure $
         NodeInfo
@@ -156,6 +203,7 @@ nodeStatus nodeState = do
             (length blockChain)
             (unNodeId <$> neighbours nodeState)
             blocksInfo
+            (show ledger)
 
 handleClientNodeExchange :: NodeState
                          -> ClientNodeExchange

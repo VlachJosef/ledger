@@ -5,6 +5,7 @@ module Block where
 import Crypto.Sign.Ed25519
 import Data.Binary
 import qualified Data.List.NonEmpty as NEL
+import qualified Data.Map.Strict as Map
 import qualified GHC.Generics as G
 import Time
 import Transaction
@@ -36,9 +37,18 @@ nodeKeyPair =
         Nothing -> error "seed has incorrect length"
         (Just (pk, sk)) -> (pk, sk)
 
+genesisValue :: Int
+genesisValue = 100 * 1000
+
 genesisTransfer :: (Transfer, Signature)
 genesisTransfer =
     let (pk, sk) = nodeKeyPair
-        transfer = Transfer pk ((Address . encodePublicKey) pk) (100 * 1000)
+        transfer = Transfer pk ((Address . encodePublicKey) pk) genesisValue
         signature = signTransfer sk transfer
     in (transfer, signature)
+
+genesisLedger :: Map.Map Address Int
+genesisLedger =
+    let (pk, sk) = nodeKeyPair
+        address = (Address . encodePublicKey) pk
+    in Map.insert address (100 * 1000) Map.empty
