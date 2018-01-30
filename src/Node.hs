@@ -213,19 +213,26 @@ handleClientNodeExchange nodeState clientNodeExchange =
         (MakeTransfer transfer signature) -> do
             case verifyTransfer signature transfer of
                 True -> do
-                    putStrLn $ "SIGNTURE VERYFIED " <> show transfer
+                    putStrLn $ "Signature verified " <> show transfer
                     timestamp <- now
                     let tx = Transaction transfer signature timestamp
                     pure $ (NExchangeResp 2, AddTransactionToNode tx)
                 False -> pure $ (NExchangeResp 4, NoAction)
         (AskBalance address) -> pure $ (NExchangeResp 3, NoAction)
         (Register address) -> do
-                    let genesisPk = (from . fst) genesisTransfer
-                    let transfer = Transfer genesisPk address 1000
-                    let signature = signTransfer (snd nodeKeyPair) transfer
-                    timestamp <- now
-                    let tx = Transaction transfer signature timestamp
-                    pure $ ((StringResp "Registration successful"), AddTransactionToNode tx)
+                    (Ledger ledger) <- readMVar $ nodeLedger nodeState
+                    txs <- readMVar $ transactionPool nodeState
+                    let addressStr = (BS.unpack $ rawAddress address)
+                    if Map.member address ledger || any (\tx -> (to . transfer) tx == address) txs
+                      then pure $ (StringResp $ "Address " <> addressStr <> " already registered", NoAction)
+                      else do
+                        let genesisPk = (from . fst) genesisTransfer
+                        let transfer = Transfer genesisPk address 1000
+                        let signature = signTransfer (snd nodeKeyPair) transfer
+                        timestamp <- now
+                        let tx = Transaction transfer signature timestamp
+                        pure $ (StringResp $  "Registration successful: " <> addressStr, AddTransactionToNode tx)
+
         FetchStatus -> do
             nodeInfo <- nodeStatus nodeState
             pure $ (StatusInfo nodeInfo, NoAction)

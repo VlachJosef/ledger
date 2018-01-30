@@ -11,7 +11,6 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Digest.Pure.SHA as SHA
 import Data.Monoid
-import Debug.Trace
 import Options.Applicative
 import Serokell.Communication.IPC
 import System.Directory (doesFileExist)
@@ -54,17 +53,17 @@ writeSecretKey filePath sk = do
 
 connectToNode :: ClientConfig -> SecretKey -> IO ()
 connectToNode clientConfig sk =
-    trace
-        "connectToNode CALLED"
-        (connectToUnixSocket
-             "sockets"
-             (nodeId clientConfig)
-             (connectNode clientConfig sk))
+    connectToUnixSocket
+        "sockets"
+        (nodeId clientConfig)
+        (connectNode clientConfig sk)
 
 connectNode :: ClientConfig -> SecretKey -> Conversation -> IO ()
 connectNode clientConfig sk conversation = do
+    let nc = (NodeConversation conversation)
     putStrLn
         ("Client id " <> (show . unNodeId . clientId) clientConfig <>
          ". Connected to node id " <>
          (show . unNodeId . nodeId) clientConfig)
-    connectClient (NodeConversation conversation) clientConfig sk
+    register sk nc
+    connectClient nc clientConfig sk

@@ -4,6 +4,7 @@
 
 module Client
     ( connectClient
+    , register
     , NodeConversation(..)
     ) where
 
@@ -47,7 +48,6 @@ data PossibleCmd
 
 data ClientCmd
     = StatusCmd
-    | RegisterCmd
     | TransferCmd Address
                   Int
 
@@ -61,7 +61,6 @@ toClientCmd :: S.ByteString -> PossibleCmd
 toClientCmd bs =
     case BS.words bs of
         ["status"] -> Cmd StatusCmd
-        ["register"] -> Cmd RegisterCmd
         ["SUBMIT", address, amount] ->
             case convertToInt amount of
                 Nothing ->
@@ -81,12 +80,6 @@ nodeCommunication sk (NodeConversation Conversation {..}) clientCmd =
             let encodedTransfer = BL.toStrict (encode payload)
             response <- send encodedTransfer *> recv
             pure $ decode (BL.fromStrict response)
-        RegisterCmd -> do
-            let address = (Address . encodePublicKey) (toPublicKey sk)
-            let payload = CExchange $ Register address
-            let encodedTransfer = BL.toStrict (encode payload)
-            response <- send encodedTransfer *> recv
-            pure $ decode (BL.fromStrict response)
         TransferCmd address amount -> do
             let transfer = Transfer (toPublicKey sk) address amount
             let transferSignature = dsign sk (encodeTransfer transfer)
@@ -94,6 +87,15 @@ nodeCommunication sk (NodeConversation Conversation {..}) clientCmd =
             let encodedTransfer = BL.toStrict (encode payload)
             response <- send encodedTransfer *> recv
             pure $ decode (BL.fromStrict response)
+
+register :: SecretKey -> NodeConversation -> IO ()
+register sk (NodeConversation Conversation {..}) = do
+    let address = (Address . encodePublicKey) (toPublicKey sk)
+    let payload = CExchange $ Register address
+    let encodedTransfer = BL.toStrict (encode payload)
+    response <- send encodedTransfer *> recv
+    let exchangeResponse = decode (BL.fromStrict response) :: ExchangeResponse
+    putStrLn $ "Registration status: " <> (show exchangeResponse)
 
 connect :: NodeId -> SecretKey -> NodeConversation -> Conversation -> IO Bool
 connect clientId sk nc (Conversation {..}) = do
@@ -113,15 +115,19 @@ connect clientId sk nc (Conversation {..}) = do
         case toClientCmd input of
             Cmd clientCmd -> do
                 exchangeResp <- comm clientCmd
-                case exchangeResp of
-                    (NExchangeResp x) -> send $ response (show x)
-                    (StringResp message) -> send $ response message
-                    (StatusInfo nodeInfo) ->
-                        send $ response (prettyPrintStatusInfo nodeInfo)
+                processExchangeResp exchangeResp send
             ErrorCmd error -> send $ response error
             UnknownCmd -> send $ response "Unkown command"
         putStrLn $ "Client command received " <> show tId
         nextStep (BS.unpack input) loop
+
+processExchangeResp :: ExchangeResponse -> (BS.ByteString -> IO ()) -> IO ()
+processExchangeResp er send =
+    case er of
+        (NExchangeResp x) -> send $ response (show x)
+        (StringResp message) -> send $ response message
+        (StatusInfo nodeInfo) ->
+            send $ response (prettyPrintStatusInfo nodeInfo)
 
 prettyPrintStatusInfo :: NodeInfo -> String
 prettyPrintStatusInfo NodeInfo {..} =
@@ -151,5 +157,5 @@ connectClient nc (ClientConfig {..}) sk = do
     listenUnixSocket "sockets" clientId (connect clientId sk nc)
 
 newtype NodeConversation = NodeConversation
-    { unNodeConverasation :: Conversation
+    { unNodeConversation :: Conversation
     }
