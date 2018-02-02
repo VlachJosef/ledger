@@ -38,9 +38,22 @@ import qualified Network.Socket as Net
 data LedgerError
     = AddressNotFound Address
     | InsufficientBalance Address
+                          Address
+                          Balance
     | NotEnoughBalance Address
                        Balance
-    deriving (Eq, Show)
+    deriving (Eq)
+
+instance Show LedgerError where
+    show (AddressNotFound address) = "Addres not found: " <> show address
+    show (InsufficientBalance fromAddress toAddress amount) =
+        "Insufficient balance to transfer " <> show amount <> " from " <>
+        show fromAddress <>
+        " to " <>
+        show toAddress
+    show (NotEnoughBalance address balance) =
+        "Not enough balance to transfer " <> show balance <> " from " <>
+        show address
 
 newtype TxId = TxId
     { unTxId :: Int

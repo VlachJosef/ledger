@@ -149,13 +149,15 @@ addBlock block nodeState = do
       putStrLn $ "[" <> show tId <> "] Expecting " <> show expectedBlockId <> " block index. Received " <>  show recievedBlockId <> " block index."
 
 reportProblems :: [LedgerError] -> IO ()
-reportProblems errors = sequence_ $ (putStrLn . show) <$> errors
+reportProblems errors = do
+  tId <- myThreadId
+  sequence_ $ (putStrLn . (("[" <> show tId <> "] ") <>) . show) <$> errors
 
 applyTransactions :: Ledger -> [Transaction] -> ([LedgerError], Ledger)
-applyTransactions ledger = foldl applyTransaction ([], ledger)
+applyTransactions ledger = foldr applyTransaction ([], ledger)
 
-applyTransaction :: ([LedgerError], Ledger) -> Transaction -> ([LedgerError], Ledger)
-applyTransaction (errors, l@(Ledger ledger)) tx =
+applyTransaction :: Transaction -> ([LedgerError], Ledger) ->  ([LedgerError], Ledger)
+applyTransaction tx (errors, l@(Ledger ledger)) =
   case res of
     Left error -> (error : errors, l)
     Right led -> (errors, led)
@@ -171,7 +173,7 @@ applyTransaction (errors, l@(Ledger ledger)) tx =
         then let ledgerUpd = Map.insertWith (flip (-)) fromAccount amountToPay ledger
                  ledgerUpd2 = Map.insertWith (+) toAccount amountToPay ledgerUpd
              in Right (Ledger ledgerUpd2)
-        else Left $ InsufficientBalance fromAccount
+        else Left $ InsufficientBalance fromAccount toAccount amountToPay
 
 balance :: Ledger -> Address -> Either LedgerError Balance
 balance (Ledger ledger) address =
@@ -339,7 +341,7 @@ commu nodeState conversation = do
                 (show (length (BS.unpack input)))
             let exchange = toExchange input
             putStrLn $ "[" <> show tId <> "] received exchange: " <> show exchange
-            (er, action) <-
+            (exchangeResponse, action) <-
                 case exchange of
                     (NExchange nodeExchange) ->
                         handleNodeExchange nodeState nodeExchange
@@ -350,7 +352,7 @@ commu nodeState conversation = do
                 (AddTransactionToNode tx) -> do
                     handleNodeExchange nodeState (AddTransaction tx)
                     pure ()
-            send conversation (BL.toStrict (encode er))
+            send conversation (BL.toStrict (encode exchangeResponse))
           -- let ioAction =
           --         case processCommand command ledger of
           -- _ <- (try ioAction) >>= ssss2
