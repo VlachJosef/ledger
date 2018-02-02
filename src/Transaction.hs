@@ -7,27 +7,46 @@ module Transaction where
 import Crypto.Sign.Ed25519
 import Data.Binary
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BL
 import Data.Semigroup
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import qualified GHC.Generics as G
 import Time
+import Utils
 
 newtype Address = Address
     { rawAddress :: ByteString
-    } deriving (Show, Read, Eq, Ord, Monoid, Binary)
+    } deriving (Read, Eq, Ord, Monoid, Binary)
+
+instance Show Address where
+    show = BS.unpack . rawAddress
 
 data Transfer = Transfer
     { from :: PublicKey
     , to :: Address
     , amount :: Int
-    } deriving (Eq, Show, G.Generic)
+    } deriving (Eq, G.Generic)
+
+instance Show Transfer where
+    show transfer =
+        "Transfer: from " <> (show . Address . encodePublicKey . from) transfer <>
+        ", to " <>
+        (show . to) transfer <>
+        ", amount " <>
+        (show . amount) transfer
 
 data Transaction = Transaction
     { transfer :: Transfer
     , signature :: Signature
     , timestamp :: Timestamp
-    } deriving (Eq, Show, G.Generic)
+    } deriving (Eq, G.Generic)
+
+instance Show Transaction where
+    show transaction =
+        "Transaction transfer: " <> (show . transfer) transaction <>
+        ", timestamp " <>
+        (show . Transaction.timestamp) transaction
 
 instance Binary PublicKey
 

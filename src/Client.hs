@@ -61,6 +61,7 @@ toClientCmd :: S.ByteString -> PossibleCmd
 toClientCmd bs =
     case BS.words bs of
         ["status"] -> Cmd StatusCmd
+        ["s"] -> Cmd StatusCmd
         ["SUBMIT", address, amount] ->
             case convertToInt amount of
                 Nothing ->
@@ -142,7 +143,7 @@ prettyPrintStatusInfo NodeInfo {..} =
     "\n" <>
     "Blocks Info    : " <>
     (foldl (<>) "\n" blocksInfo) <>
-    "Ledger         : " <>
+    "Ledger:\n" <>
     ledger
 
 nextStep :: String -> IO () -> IO ()

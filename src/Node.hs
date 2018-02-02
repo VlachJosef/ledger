@@ -67,13 +67,15 @@ mineblock :: NodeState -> IO ()
 mineblock nodeState = loop where
 
     loop = do
+      tId <- myThreadId
       threadDelay $ 15 * 1000 * 1000
       txs <- readMVar $ transactionPool nodeState
-      if null txs then putStrLn "No Transaction to mine." else mine txs
+      if null txs then putStrLn $ "[" <> show tId <> "] No Transaction to mine." else mine txs
       loop
 
     mine :: [Transaction] -> IO ()
     mine txs = do
+      tId <- myThreadId
       chain <- readMVar $ blockchain nodeState
       timestamp <- now
       let lastBlock = NEL.head chain
@@ -81,53 +83,70 @@ mineblock nodeState = loop where
       let nextBlock = Block nextBlockId txs timestamp
       addBlock nextBlock nodeState
       writeChan (broadcastChannel nodeState) (BlockBroadcast nextBlock)
-      putStrLn $ "Mined block " <> show nextBlockId <> " of " <> show (length txs) <> " transactions"
+      putStrLn $ "[" <> show tId <> "] Mined block " <> show nextBlockId <> " of " <> show (length txs) <> " transactions"
 
+transactionInBlockchain :: Transaction -> BlockChain -> Bool
+transactionInBlockchain transaction blocks =
+  or $ (any (== transaction)) <$> transactions <$> blocks
 
-handleNodeMsg :: NodeState -> NodeExchange -> IO ()
-handleNodeMsg nodeState msg =
+handleNodeExchange :: NodeState -> NodeExchange -> IO (ExchangeResponse, StateAction)
+handleNodeExchange nodeState msg =
     case msg of
         AddTransaction tx -> do
-            txs <- readMVar (transactionPool nodeState)
+            tId <- myThreadId
+            bchain <- readMVar $ blockchain nodeState
+            txs <- readMVar $ transactionPool nodeState
             let hasTx = any (\t -> t == tx) txs
-            if hasTx
-                then putStrLn $ "Transaction aready exists: " <> show tx
+            if hasTx || transactionInBlockchain tx bchain
+                then do putStrLn $ "[" <> show tId <> "] Transaction already exists: " <> show tx
+                        pure $ (NExchangeResp 1, NoAction)
                 else do
                     modifyMVar_
                         (transactionPool nodeState)
                         (\txs -> pure $ tx : txs)
-                    putStrLn $
-                        "Transaction successsfully added. Total transactios: " <>
-                        (show $ length txs + 1)
-                    putStrLn $ "Writing transactios to channel"
+                    putStrLn $ "[" <> show tId <> "] Transaction " <> show tx <> " successsfully added to the poll and to the broadcast. Total number of transactions in pool: " <> (show $ length txs + 1)
                     writeChan (broadcastChannel nodeState) (TxBroadcast tx)
+                    pure $ (NExchangeResp 1, NoAction)
         QueryBlock n -> do
             blocks <- readMVar (blockchain nodeState)
             let block = find (\b -> Block.index b == n) blocks
             case block of
-                Nothing -> pure ()
-                (Just b) -> pure () -- (send . conversation) nodeState (BL.toStrict $ encode b)
-        AddBlock block -> addBlock block nodeState
+                Nothing -> pure $ (BlockResponse Nothing, NoAction)
+                (Just b) -> pure $ (BlockResponse (Just b), NoAction)
+        AddBlock block -> do
+          addBlock block nodeState
+          pure $ (NExchangeResp 1, NoAction)
+
 
 addBlock :: Block -> NodeState -> IO ()
 addBlock block nodeState = do
-  putStrLn $ "Adding block " <> show (index block) <> " to the blockchain."
-  -- Remove transaction from transaction pool which are in the newly added block
-  let txs = transactions block
-  modifyMVar_ (transactionPool nodeState) (\txs2 -> pure $ txs2 \\ txs)
+  blocks <- readMVar (blockchain nodeState)
+  let recievedBlockId = index block
+  let expectedBlockId = ((+1) . index . NEL.head) blocks
+  if expectedBlockId == recievedBlockId
+    then do
+      tId <- myThreadId
 
-  -- Update Ledger
-  putStrLn $ "Reconciling ledger!"
-  let ledgerM = nodeLedger nodeState
-  ledger <- takeMVar ledgerM
-  let (errors, ledgerUpd) = applyTransactions ledger txs
+      putStrLn $ "[" <> show tId <> "] Adding block " <> show recievedBlockId <> " to the blockchain."
+      -- Remove transaction from transaction pool which are in the newly added block
+      let txs = transactions block
+      modifyMVar_ (transactionPool nodeState) (\txs2 -> pure $ txs2 \\ txs)
 
-  reportProblems errors
+      -- Update Ledger
+      putStrLn $ "[" <> show tId <> "] Reconciling ledger!"
+      let ledgerM = nodeLedger nodeState
+      ledger <- takeMVar ledgerM
+      let (errors, ledgerUpd) = applyTransactions ledger txs
 
-  putMVar ledgerM ledgerUpd
+      reportProblems errors
 
-  -- Add block itself
-  modifyMVar_ (blockchain nodeState) (\blocks -> pure $ block <| blocks)
+      putMVar ledgerM ledgerUpd
+
+      -- Add block itself
+      modifyMVar_ (blockchain nodeState) (\blocks -> pure $ block <| blocks)
+    else do
+      tId <- myThreadId
+      putStrLn $ "[" <> show tId <> "] Expecting " <> show expectedBlockId <> " block index. Received " <>  show recievedBlockId <> " block index."
 
 reportProblems :: [LedgerError] -> IO ()
 reportProblems errors = sequence_ $ (putStrLn . show) <$> errors
@@ -148,7 +167,7 @@ applyTransaction (errors, l@(Ledger ledger)) tx =
 
     res = do
       f <- balance l fromAccount
-      if f > amountToPay
+      if f >= amountToPay
         then let ledgerUpd = Map.insertWith (flip (-)) fromAccount amountToPay ledger
                  ledgerUpd2 = Map.insertWith (+) toAccount amountToPay ledgerUpd
              in Right (Ledger ledgerUpd2)
@@ -161,12 +180,8 @@ balance (Ledger ledger) address =
 toExchange :: ByteString -> Exchange
 toExchange = decode . BL.fromStrict
 
-handleNodeExchange :: NodeState
-                   -> NodeExchange
-                   -> IO (ExchangeResponse, StateAction)
-handleNodeExchange nodeState nodeExchange = do
-    handleNodeMsg nodeState nodeExchange
-    pure $ (NExchangeResp 1, NoAction)
+toExchangeResponse :: ByteString -> ExchangeResponse
+toExchangeResponse = decode . BL.fromStrict
 
 deriveAddress :: PublicKey -> Address
 deriveAddress = Address . encodePublicKey
@@ -213,7 +228,8 @@ handleClientNodeExchange nodeState clientNodeExchange =
         (MakeTransfer transfer signature) -> do
             case verifyTransfer signature transfer of
                 True -> do
-                    putStrLn $ "Signature verified " <> show transfer
+                    tId <- myThreadId
+                    putStrLn $  "[" <> show tId <> "] Signature verified " <> show transfer
                     timestamp <- now
                     let tx = Transaction transfer signature timestamp
                     pure $ (NExchangeResp 2, AddTransactionToNode tx)
@@ -242,38 +258,57 @@ broadcastToExchange :: Broadcast -> NodeExchange
 broadcastToExchange (TxBroadcast tx) = AddTransaction tx
 broadcastToExchange (BlockBroadcast block) = AddBlock block
 
-neighbourHandler :: Chan Broadcast -> NodeId -> Conversation -> IO ()
-neighbourHandler broadcastChannel nodeId cc @ Conversation {..} = do
+synchonizeBlockChain :: NodeState -> Int -> Conversation -> IO ()
+synchonizeBlockChain nodeState n cc @ Conversation {..} = do
+  tId <- myThreadId
+  putStrLn $ "[" <> show tId <> "] Synchronizing. Asking for block " <> show n
+  response <- send (BL.toStrict $ encode (NExchange $ QueryBlock n)) *> recv
+  case toExchangeResponse response of
+    BlockResponse (Just block) -> do
+      putStrLn $ "[" <> show tId <> "] Synchronizing. Block number " <> show n <> " received. Adding it to blockchain"
+      addBlock block nodeState
+      synchonizeBlockChain nodeState (n + 1) cc
+    BlockResponse Nothing -> putStrLn $ "[" <> show tId <> "] Synchronizing. Block number " <> show n <> " don't received. Synchronization complete."
+    other -> putStrLn $  "[" <> show tId <> "] Error: Expected BlockResponse got: " <> show other
+
+neighbourHandler :: NodeState -> Chan Broadcast -> NodeId -> Conversation -> IO ()
+neighbourHandler nodeState broadcastChannel nodeId cc @ Conversation {..} = do
+  blocks <- readMVar (blockchain nodeState)
+  synchonizeBlockChain nodeState (List.length blocks + 1) cc
+  loop where
+  loop = do
+    tId <- myThreadId
     putStrLn $
-        "CONNECTED to nodeId " <> show (unNodeId nodeId) <>
+        "[" <> show tId <> "] CONNECTED to nodeId " <> show (unNodeId nodeId) <>
         ", reading from channel"
     broadcast <- readChan broadcastChannel
     --putStrLn $ "TRANASACTIOB to boradcase " <> show broadcast
     response <- send (BL.toStrict $ encode (NExchange $ broadcastToExchange broadcast)) *> recv
-    putStrLn $ "CONNECTED and receind nodeId " <> show (unNodeId nodeId)
-    neighbourHandler broadcastChannel nodeId cc
+    let dec = toExchangeResponse response
+    putStrLn $ "[" <> show tId <> "] CONNECTED and recieved nodeId " <> show (unNodeId nodeId) <> ", exchange response " <> show dec
+    loop --neighbourHandler nodeState broadcastChannel nodeId cc
 
-connectToNeighbour :: Chan Broadcast -> NodeId -> IO ()
-connectToNeighbour broadcastChan nodeId =
+connectToNeighbour :: NodeState -> Chan Broadcast -> NodeId -> IO ()
+connectToNeighbour nodeState broadcastChan nodeId =
     try
         (connectToUnixSocket
              "sockets"
              nodeId
-             (neighbourHandler broadcastChan nodeId)) >>=
-    ssss broadcastChan nodeId
+             (neighbourHandler nodeState broadcastChan nodeId)) >>=
+    retry nodeState broadcastChan nodeId
 
-ssss :: Chan Broadcast -> NodeId -> Either IOException a -> IO ()
-ssss broadcastChan nodeId (Right aa) =
-    putStrLn $ "OK connection to " <> show (unNodeId nodeId) <> " successful!!!"
-ssss broadcastChan nodeId (Left ex) = do
-    putStrLn
-        ("Connection to nodeId : " <> show (unNodeId nodeId) <> " failed: " <>
-         show ex)
-    putStrLn ("Attempting to reconnect in 10s")
+retry :: NodeState -> Chan Broadcast -> NodeId -> Either IOException a -> IO ()
+retry nodeState broadcastChan nodeId (Right aa) = do
+    tId <- myThreadId
+    putStrLn $ "[" <> show tId <> "] OK connection to " <> show (unNodeId nodeId) <> " successful!!!"
+retry nodeState broadcastChan nodeId (Left ex) = do
+    tId <- myThreadId
+    putStrLn $ "[" <> show tId <> "] Connection to nodeId : " <> show (unNodeId nodeId) <> " failed: " <>
+         show ex
+    putStrLn $ "[" <> show tId <> "] Attempting to reconnect in 10s"
     (threadDelay $ 10 * 1000 * 1000)
-    putStrLn
-        ("Trying reestablish connection with nodeId " <> show (unNodeId nodeId))
-    connectToNeighbour broadcastChan nodeId
+    putStrLn $ "[" <> show tId <> "] Trying reestablish connection with nodeId " <> show (unNodeId nodeId)
+    connectToNeighbour nodeState broadcastChan nodeId
 
 nodeIdFromState :: NodeState -> NodeId
 nodeIdFromState = nodeId . nodeConfig
@@ -287,7 +322,7 @@ commu nodeState conversation = do
         forkIO
             ((do tId <- myThreadId
                  (putStrLn $
-                  "Node " <> myId <> ". Forking new thread " <> show tId)) <* do
+                  "[" <> show tId <> "] node " <> myId <> ". Forking new thread!")) <* do
                  loopO nodeState)
   where
     myId = nodeIdFromStateStr nodeState
@@ -299,11 +334,11 @@ commu nodeState conversation = do
             input <- recv conversation
             tId <- myThreadId
             putStrLn $
-                "Node " <> myId <> " threadId " <> show tId <>
+                "[" <> show tId <> "] node " <> myId <>
                 " received some input " <>
                 (show (length (BS.unpack input)))
             let exchange = toExchange input
-            putStrLn $ "Receiver exhange" <> show exchange
+            putStrLn $ "[" <> show tId <> "] received exchange: " <> show exchange
             (er, action) <-
                 case exchange of
                     (NExchange nodeExchange) ->
@@ -339,9 +374,10 @@ establishClusterConnection nodeConfig = do
 logMessage :: NodeId -> NodeId -> String -> IO ()
 logMessage nodeId neighbourId msg =
     let myId = show (unNodeId nodeId)
-    in putStrLn
-           ("Node " <> myId <> ". " <> msg <> " with node: " <>
-            show (unNodeId neighbourId))
+    in do
+      tId <- myThreadId
+      putStrLn $ "[" <> show tId <> "] node " <> myId <> ". " <> msg <> " with node: " <>
+            show (unNodeId neighbourId)
 
 connectToNeighbours :: NodeState -> IO [ThreadId]
 connectToNeighbours nodeState =
@@ -352,7 +388,7 @@ connectToNeighbours nodeState =
                    forkIO
                        (do logMessage myId nId "Trying to establish connecting"
                            myChan <- dupChan (broadcastChannel nodeState)
-                           connectToNeighbour myChan nId
+                           connectToNeighbour nodeState myChan nId
                            logMessage myId nId "Terminating connection")) <$>
               nodeNeighbours
 

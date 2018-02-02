@@ -7,13 +7,14 @@ import Control.Concurrent
 import Crypto.Sign.Ed25519 (Signature)
 import Data.Binary
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as BL
 import Data.List
 import Data.List.NonEmpty
+import Data.Semigroup
 import qualified GHC.Generics as G
 import Serokell.Communication.IPC
 import Transaction
 
+--import Utils
 data Exchange
     = NExchange NodeExchange
     | CExchange ClientNodeExchange
@@ -27,6 +28,10 @@ data NodeExchange
     | AddBlock Block
     deriving (Show, G.Generic)
 
+-- instance Show NodeExchange where
+--     show (AddTransaction transaction) = "AddTransaction " <> show transaction
+--     show (QueryBlock n) = "QuesryBlock " <> show n
+--     show (AddBlock b) = "AddBlock " <> show b
 instance Binary NodeExchange
 
 data ClientNodeExchange
@@ -35,7 +40,14 @@ data ClientNodeExchange
     | AskBalance Address
     | FetchStatus
     | Register Address
-    deriving (Show, G.Generic)
+    deriving (G.Generic)
+
+instance Show ClientNodeExchange where
+    show (MakeTransfer transfer signature) =
+        "MakeTransfer transfer: " <> show transfer
+    show (AskBalance address) = "AskBalance address: " <> show address
+    show FetchStatus = "FetchStatus"
+    show (Register address) = "Register address: " <> show address
 
 instance Binary ClientNodeExchange
 
@@ -54,6 +66,7 @@ data ExchangeResponse
     = NExchangeResp Int
     | StringResp String
     | StatusInfo NodeInfo
+    | BlockResponse (Maybe Block)
     deriving (Show, G.Generic)
 
 instance Binary ExchangeResponse

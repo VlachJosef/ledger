@@ -20,6 +20,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.Digest.Pure.SHA as SHA
 import Data.Int
 import Data.Map (Map)
+import qualified Data.Map.Strict as MAP
 import Data.Maybe
 import Data.Tuple
 import Debug.Trace
@@ -47,22 +48,20 @@ newtype TxId = TxId
 
 type Balance = Int
 
--- type MBalance = MVar Balance
--- newtype Ledger =
---     Ledger (Map Address MBalance)
---     deriving (Eq, Generic)
 newtype Ledger =
     Ledger (Map Address Balance)
-    deriving (Eq, Generic, Show)
+    deriving (Eq, Generic)
+
+instance Show Ledger where
+    show (Ledger ledger) =
+        Map.foldrWithKey
+            (\address balance acc ->
+                 acc <> show address <> " " <> show balance <> "\n")
+            ""
+            ledger
 
 newtype LedgerState =
     LedgerState (MVar Ledger)
     deriving (Eq, Generic)
 
--- freeze :: Ledger -> IO LedgerFreeze
--- freeze (Ledger ledger) = LedgerFreeze <$> traverse readMVar ledger
--- unFreeze :: LedgerFreeze -> IO Ledger
--- unFreeze (LedgerFreeze ledgerFreeze) = Ledger <$> traverse newMVar ledgerFreeze
-instance Newtype Ledger--instance Binary LedgerFreeze
--- emptyLedger :: Ledger
--- emptyLedger = Ledger Map.empty
+instance Newtype Ledger
