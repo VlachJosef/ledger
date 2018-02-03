@@ -1,5 +1,6 @@
 module Utils
     ( encodePublicKey
+    , hashSignature
     ) where
 
 import Crypto.Sign.Ed25519
@@ -8,6 +9,9 @@ import Data.ByteString.Base58
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Digest.Pure.SHA as SHA
+
+hashSignature :: Signature -> ByteString
+hashSignature = encodeBase58 bitcoinAlphabet . hash . unSignature
 
 hash :: ByteString -> ByteString
 hash = BL.toStrict . SHA.bytestringDigest . SHA.sha256 . BL.fromStrict

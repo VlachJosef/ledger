@@ -29,7 +29,8 @@ genesisBlock = Block 1 [genesisTransaction] 0
 genesisTransaction :: Transaction
 genesisTransaction =
     let (transfer, signature) = genesisTransfer
-    in Transaction transfer signature 0
+        transactionId = TransactionId $ hashSignature signature
+    in Transaction transactionId transfer signature 0
 
 nodeKeyPair :: (PublicKey, SecretKey)
 nodeKeyPair =

@@ -64,6 +64,8 @@ instance Binary NodeInfo
 
 data ExchangeResponse
     = NExchangeResp Int
+    | SubmitResp (Maybe TransactionId)
+    | BalanceResp Int
     | StringResp String
     | StatusInfo NodeInfo
     | BlockResponse (Maybe Block)

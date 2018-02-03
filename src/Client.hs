@@ -48,6 +48,7 @@ data PossibleCmd
 
 data ClientCmd
     = StatusCmd
+    | BalanceCmd Address
     | TransferCmd Address
                   Int
 
@@ -62,6 +63,7 @@ toClientCmd bs =
     case BS.words bs of
         ["status"] -> Cmd StatusCmd
         ["s"] -> Cmd StatusCmd
+        ["BALANCE", address] -> (Cmd . BalanceCmd . Address) address
         ["SUBMIT", address, amount] ->
             case convertToInt amount of
                 Nothing ->
@@ -78,6 +80,11 @@ nodeCommunication sk (NodeConversation Conversation {..}) clientCmd =
     case clientCmd of
         StatusCmd -> do
             let payload = CExchange FetchStatus
+            let encodedTransfer = BL.toStrict (encode payload)
+            response <- send encodedTransfer *> recv
+            pure $ decode (BL.fromStrict response)
+        BalanceCmd address -> do
+            let payload = CExchange (AskBalance address)
             let encodedTransfer = BL.toStrict (encode payload)
             response <- send encodedTransfer *> recv
             pure $ decode (BL.fromStrict response)
@@ -124,11 +131,14 @@ connect clientId sk nc (Conversation {..}) = do
 
 processExchangeResp :: ExchangeResponse -> (BS.ByteString -> IO ()) -> IO ()
 processExchangeResp er send =
+    send . response $
     case er of
-        (NExchangeResp x) -> send $ response (show x)
-        (StringResp message) -> send $ response message
-        (StatusInfo nodeInfo) ->
-            send $ response (prettyPrintStatusInfo nodeInfo)
+        NExchangeResp x -> show x
+        StringResp message -> message
+        SubmitResp (Just transactionId) -> show transactionId
+        SubmitResp Nothing -> "Transaction has not been accepted"
+        BalanceResp balance -> show balance
+        StatusInfo nodeInfo -> prettyPrintStatusInfo nodeInfo
 
 prettyPrintStatusInfo :: NodeInfo -> String
 prettyPrintStatusInfo NodeInfo {..} =

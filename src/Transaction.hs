@@ -30,22 +30,32 @@ data Transfer = Transfer
 
 instance Show Transfer where
     show transfer =
-        "Transfer: from " <> (show . Address . encodePublicKey . from) transfer <>
-        ", to " <>
+        "from " <> (show . Address . encodePublicKey . from) transfer <> ", to " <>
         (show . to) transfer <>
         ", amount " <>
         (show . amount) transfer
 
+newtype TransactionId = TransactionId
+    { unTransactionId :: ByteString
+    } deriving (Eq, G.Generic)
+
+instance Show TransactionId where
+    show = BS.unpack . unTransactionId
+
 data Transaction = Transaction
-    { transfer :: Transfer
+    { transactionId :: TransactionId
+    , transfer :: Transfer
     , signature :: Signature
     , timestamp :: Timestamp
     } deriving (Eq, G.Generic)
 
 instance Show Transaction where
     show transaction =
-        "Transaction transfer: " <> (show . transfer) transaction <>
-        ", timestamp " <>
+        "transactionId: " <> (show . transactionId) transaction <> "\n" <>
+        "transfer: " <>
+        (show . transfer) transaction <>
+        "\n" <>
+        "timestamp: " <>
         (show . Transaction.timestamp) transaction
 
 instance Binary PublicKey
@@ -54,12 +64,9 @@ instance Binary Signature
 
 instance Binary Transfer
 
-instance Binary Transaction
+instance Binary TransactionId
 
-mkTransaction :: Transfer -> Signature -> IO Transaction
-mkTransaction transfer signature = do
-    timestamp <- now
-    pure $ Transaction transfer signature timestamp
+instance Binary Transaction
 
 encodeTransfer :: Transfer -> ByteString
 encodeTransfer transfer = BL.toStrict (encode transfer)
@@ -87,13 +94,12 @@ verifyTx Transaction {..} =
 
 now :: IO Timestamp
 now = round <$> (* 1000000) <$> getPOSIXTime
-
-text :: (PublicKey -> Address) -> IO Transaction
-text f = do
-    (pk, sk) <- createKeypair
-    let toAddress = f pk
-    (pk2, sk2) <- createKeypair
-    let transfer = Transfer pk2 toAddress 100
-    let sign1 = signTransfer sk transfer
-    let tx1 = Transaction transfer sign1 0
-    pure tx1
+-- text :: (PublicKey -> Address) -> IO Transaction
+-- text f = do
+--     (pk, sk) <- createKeypair
+--     let toAddress = f pk
+--     (pk2, sk2) <- createKeypair
+--     let transfer = Transfer pk2 toAddress 100
+--     let sign1 = signTransfer sk transfer
+--     let tx1 = Transaction transfer sign1 0
+--     pure tx1

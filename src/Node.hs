@@ -81,9 +81,14 @@ mineblock nodeState = loop where
       let lastBlock = NEL.head chain
       let nextBlockId = 1 + index lastBlock
       let nextBlock = Block nextBlockId txs timestamp
-      addBlock nextBlock nodeState
-      writeChan (broadcastChannel nodeState) (BlockBroadcast nextBlock)
-      putStrLn $ "[" <> show tId <> "] Mined block " <> show nextBlockId <> " of " <> show (length txs) <> " transactions"
+      maybeValidBlock <- addBlock nextBlock nodeState
+      case maybeValidBlock of
+        Nothing -> putStrLn $ "[" <> show tId <> "] Mining failed, block number " <> show nextBlock <> " already exists."
+        (Just validBlock) -> do
+          writeChan (broadcastChannel nodeState) (BlockBroadcast validBlock)
+          let validCount = (length . transactions) validBlock
+          let invalidCount = length txs - validCount
+          putStrLn $ "[" <> show tId <> "] Mined block " <> show nextBlockId <> " of " <> show validCount <> " valid transactions and " <> show invalidCount <> " invalid transactions."
 
 transactionInBlockchain :: Transaction -> BlockChain -> Bool
 transactionInBlockchain transaction blocks =
@@ -118,9 +123,9 @@ handleNodeExchange nodeState msg =
           pure $ (NExchangeResp 1, NoAction)
 
 
-addBlock :: Block -> NodeState -> IO ()
+addBlock :: Block -> NodeState -> IO (Maybe Block)
 addBlock block nodeState = do
-  blocks <- readMVar (blockchain nodeState)
+  blocks <- takeMVar (blockchain nodeState)
   let recievedBlockId = index block
   let expectedBlockId = ((+1) . index . NEL.head) blocks
   if expectedBlockId == recievedBlockId
@@ -136,31 +141,36 @@ addBlock block nodeState = do
       putStrLn $ "[" <> show tId <> "] Reconciling ledger!"
       let ledgerM = nodeLedger nodeState
       ledger <- takeMVar ledgerM
-      let (errors, ledgerUpd) = applyTransactions ledger txs
+      let (errors, ledgerUpd, validTransactions) = applyTransactions ledger txs
+
+      let validBlock = block { transactions = validTransactions }
 
       reportProblems errors
 
       putMVar ledgerM ledgerUpd
 
       -- Add block itself
-      modifyMVar_ (blockchain nodeState) (\blocks -> pure $ block <| blocks)
+      putMVar (blockchain nodeState) (validBlock <| blocks)
+      pure $ Just validBlock
     else do
       tId <- myThreadId
+      putMVar (blockchain nodeState) blocks
       putStrLn $ "[" <> show tId <> "] Expecting " <> show expectedBlockId <> " block index. Received " <>  show recievedBlockId <> " block index."
+      pure Nothing
 
 reportProblems :: [LedgerError] -> IO ()
 reportProblems errors = do
   tId <- myThreadId
   sequence_ $ (putStrLn . (("[" <> show tId <> "] ") <>) . show) <$> errors
 
-applyTransactions :: Ledger -> [Transaction] -> ([LedgerError], Ledger)
-applyTransactions ledger = foldr applyTransaction ([], ledger)
+applyTransactions :: Ledger -> [Transaction] -> ([LedgerError], Ledger, [Transaction])
+applyTransactions ledger = foldr applyTransaction ([], ledger, [])
 
-applyTransaction :: Transaction -> ([LedgerError], Ledger) ->  ([LedgerError], Ledger)
-applyTransaction tx (errors, l@(Ledger ledger)) =
+applyTransaction :: Transaction -> ([LedgerError], Ledger, [Transaction]) ->  ([LedgerError], Ledger, [Transaction])
+applyTransaction tx (errors, l@(Ledger ledger), validTransactions) =
   case res of
-    Left error -> (error : errors, l)
-    Right led -> (errors, led)
+    Left error -> (error : errors, l, validTransactions)
+    Right led -> (errors, led, tx : validTransactions)
   where
     tran = transfer tx
     fromAccount = (Address . encodePublicKey . from) tran
@@ -227,17 +237,24 @@ handleClientNodeExchange :: NodeState
                          -> IO (ExchangeResponse, StateAction)
 handleClientNodeExchange nodeState clientNodeExchange =
     case clientNodeExchange of
-        (MakeTransfer transfer signature) -> do
+        MakeTransfer transfer signature -> do
             case verifyTransfer signature transfer of
                 True -> do
                     tId <- myThreadId
                     putStrLn $  "[" <> show tId <> "] Signature verified " <> show transfer
                     timestamp <- now
-                    let tx = Transaction transfer signature timestamp
-                    pure $ (NExchangeResp 2, AddTransactionToNode tx)
-                False -> pure $ (NExchangeResp 4, NoAction)
-        (AskBalance address) -> pure $ (NExchangeResp 3, NoAction)
-        (Register address) -> do
+                    let transactionId = TransactionId $  hashSignature signature
+                    let tx = Transaction transactionId transfer signature timestamp
+                    pure $ (SubmitResp $ Just transactionId, AddTransactionToNode tx)
+                False -> pure $ (SubmitResp Nothing, NoAction)
+
+        AskBalance address -> do
+          Ledger ledger <- readMVar (nodeLedger nodeState)
+          pure $ case Map.lookup address ledger of
+            Nothing -> (StringResp $ "Balance error, unknown address: " <> show address, NoAction)
+            Just b -> (BalanceResp b, NoAction)
+
+        Register address -> do
                     (Ledger ledger) <- readMVar $ nodeLedger nodeState
                     txs <- readMVar $ transactionPool nodeState
                     let addressStr = (BS.unpack $ rawAddress address)
@@ -247,14 +264,14 @@ handleClientNodeExchange nodeState clientNodeExchange =
                         let genesisPk = (from . fst) genesisTransfer
                         let transfer = Transfer genesisPk address 1000
                         let signature = signTransfer (snd nodeKeyPair) transfer
+                        let transactionId = TransactionId $ hashSignature signature
                         timestamp <- now
-                        let tx = Transaction transfer signature timestamp
+                        let tx = Transaction transactionId transfer signature timestamp
                         pure $ (StringResp $  "Registration successful: " <> addressStr, AddTransactionToNode tx)
 
         FetchStatus -> do
             nodeInfo <- nodeStatus nodeState
             pure $ (StatusInfo nodeInfo, NoAction)
-
 
 broadcastToExchange :: Broadcast -> NodeExchange
 broadcastToExchange (TxBroadcast tx) = AddTransaction tx
@@ -284,7 +301,6 @@ neighbourHandler nodeState broadcastChannel nodeId cc @ Conversation {..} = do
         "[" <> show tId <> "] CONNECTED to nodeId " <> show (unNodeId nodeId) <>
         ", reading from channel"
     broadcast <- readChan broadcastChannel
-    --putStrLn $ "TRANASACTIOB to boradcase " <> show broadcast
     response <- send (BL.toStrict $ encode (NExchange $ broadcastToExchange broadcast)) *> recv
     let dec = toExchangeResponse response
     putStrLn $ "[" <> show tId <> "] CONNECTED and recieved nodeId " <> show (unNodeId nodeId) <> ", exchange response " <> show dec
@@ -353,9 +369,6 @@ commu nodeState conversation = do
                     handleNodeExchange nodeState (AddTransaction tx)
                     pure ()
             send conversation (BL.toStrict (encode exchangeResponse))
-          -- let ioAction =
-          --         case processCommand command ledger of
-          -- _ <- (try ioAction) >>= ssss2
             nextStep (BS.unpack input) loop
 
 nextStep :: String -> IO () -> IO ()
