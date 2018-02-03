@@ -49,6 +49,7 @@ data PossibleCmd
 data ClientCmd
     = StatusCmd
     | BalanceCmd Address
+    | QueryCmd TransactionId
     | TransferCmd Address
                   Int
 
@@ -64,6 +65,7 @@ toClientCmd bs =
         ["status"] -> Cmd StatusCmd
         ["s"] -> Cmd StatusCmd
         ["BALANCE", address] -> (Cmd . BalanceCmd . Address) address
+        ["QUERY", txId] -> (Cmd . QueryCmd . TransactionId) txId
         ["SUBMIT", address, amount] ->
             case convertToInt amount of
                 Nothing ->
@@ -77,24 +79,18 @@ nodeCommunication :: SecretKey
                   -> ClientCmd
                   -> IO ExchangeResponse
 nodeCommunication sk (NodeConversation Conversation {..}) clientCmd =
-    case clientCmd of
-        StatusCmd -> do
-            let payload = CExchange FetchStatus
-            let encodedTransfer = BL.toStrict (encode payload)
-            response <- send encodedTransfer *> recv
-            pure $ decode (BL.fromStrict response)
-        BalanceCmd address -> do
-            let payload = CExchange (AskBalance address)
-            let encodedTransfer = BL.toStrict (encode payload)
-            response <- send encodedTransfer *> recv
-            pure $ decode (BL.fromStrict response)
-        TransferCmd address amount -> do
-            let transfer = Transfer (toPublicKey sk) address amount
-            let transferSignature = dsign sk (encodeTransfer transfer)
-            let payload = CExchange $ MakeTransfer transfer transferSignature
-            let encodedTransfer = BL.toStrict (encode payload)
-            response <- send encodedTransfer *> recv
-            pure $ decode (BL.fromStrict response)
+    let payload =
+            case clientCmd of
+                StatusCmd -> CExchange FetchStatus
+                BalanceCmd address -> CExchange (AskBalance address)
+                QueryCmd txId -> CExchange (Query txId)
+                TransferCmd address amount ->
+                    let transfer = Transfer (toPublicKey sk) address amount
+                        transferSignature = dsign sk (encodeTransfer transfer)
+                    in CExchange (MakeTransfer transfer transferSignature)
+    in do let encodedTransfer = BL.toStrict (encode payload)
+          response <- send encodedTransfer *> recv
+          pure $ decode (BL.fromStrict response)
 
 register :: SecretKey -> NodeConversation -> IO ()
 register sk (NodeConversation Conversation {..}) = do
@@ -138,6 +134,7 @@ processExchangeResp er send =
         SubmitResp (Just transactionId) -> show transactionId
         SubmitResp Nothing -> "Transaction has not been accepted"
         BalanceResp balance -> show balance
+        QueryResp wasAdded -> show wasAdded
         StatusInfo nodeInfo -> prettyPrintStatusInfo nodeInfo
 
 prettyPrintStatusInfo :: NodeInfo -> String

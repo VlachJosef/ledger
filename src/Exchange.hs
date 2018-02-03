@@ -38,6 +38,7 @@ data ClientNodeExchange
     = MakeTransfer Transfer
                    Signature
     | AskBalance Address
+    | Query TransactionId
     | FetchStatus
     | Register Address
     deriving (G.Generic)
@@ -46,6 +47,7 @@ instance Show ClientNodeExchange where
     show (MakeTransfer transfer signature) =
         "MakeTransfer transfer: " <> show transfer
     show (AskBalance address) = "AskBalance address: " <> show address
+    show (Query txId) = "Query txId: " <> show txId
     show FetchStatus = "FetchStatus"
     show (Register address) = "Register address: " <> show address
 
@@ -66,6 +68,7 @@ data ExchangeResponse
     = NExchangeResp Int
     | SubmitResp (Maybe TransactionId)
     | BalanceResp Int
+    | QueryResp Bool
     | StringResp String
     | StatusInfo NodeInfo
     | BlockResponse (Maybe Block)

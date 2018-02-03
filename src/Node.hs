@@ -94,6 +94,10 @@ transactionInBlockchain :: Transaction -> BlockChain -> Bool
 transactionInBlockchain transaction blocks =
   or $ (any (== transaction)) <$> transactions <$> blocks
 
+transactionIdInBlockchain :: TransactionId -> BlockChain -> Bool
+transactionIdInBlockchain txId blocks =
+  or $ (any (== txId)) <$> (map transactionId) <$> transactions <$> blocks
+
 handleNodeExchange :: NodeState -> NodeExchange -> IO (ExchangeResponse, StateAction)
 handleNodeExchange nodeState msg =
     case msg of
@@ -253,6 +257,11 @@ handleClientNodeExchange nodeState clientNodeExchange =
           pure $ case Map.lookup address ledger of
             Nothing -> (StringResp $ "Balance error, unknown address: " <> show address, NoAction)
             Just b -> (BalanceResp b, NoAction)
+
+        Query txId -> do
+          blocks <- readMVar (blockchain nodeState)
+          let wasAdded = transactionIdInBlockchain txId blocks
+          pure $ (QueryResp wasAdded, NoAction)
 
         Register address -> do
                     (Ledger ledger) <- readMVar $ nodeLedger nodeState
