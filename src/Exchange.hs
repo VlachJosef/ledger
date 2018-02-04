@@ -2,11 +2,13 @@
 
 module Exchange where
 
+import Address
 import Block
 import Control.Concurrent
 import Crypto.Sign.Ed25519 (Signature)
 import Data.Binary
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as BL
 import Data.List
 import Data.List.NonEmpty
 import Data.Semigroup
@@ -14,7 +16,6 @@ import qualified GHC.Generics as G
 import Serokell.Communication.IPC
 import Transaction
 
---import Utils
 data Exchange
     = NExchange NodeExchange
     | CExchange ClientNodeExchange
@@ -83,3 +84,9 @@ data StateAction
 data Broadcast
     = TxBroadcast Transaction
     | BlockBroadcast Block
+
+decodeExchange :: ByteString -> Exchange
+decodeExchange = decode . BL.fromStrict
+
+decodeExchangeResponse :: ByteString -> ExchangeResponse
+decodeExchangeResponse = decode . BL.fromStrict

@@ -5,6 +5,7 @@ module Node
     ( establishClusterConnection
     ) where
 
+import Address
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.Functor
@@ -177,7 +178,7 @@ applyTransaction tx (errors, l@(Ledger ledger), validTransactions) =
     Right led -> (errors, led, tx : validTransactions)
   where
     tran = transfer tx
-    fromAccount = (Address . encodePublicKey . from) tran
+    fromAccount = (deriveAddress . from) tran
     toAccount = to tran
     amountToPay = amount tran
 
@@ -192,15 +193,6 @@ applyTransaction tx (errors, l@(Ledger ledger), validTransactions) =
 balance :: Ledger -> Address -> Either LedgerError Balance
 balance (Ledger ledger) address =
     maybe (Left $ AddressNotFound address) Right (Map.lookup address ledger)
-
-toExchange :: ByteString -> Exchange
-toExchange = decode . BL.fromStrict
-
-toExchangeResponse :: ByteString -> ExchangeResponse
-toExchangeResponse = decode . BL.fromStrict
-
-deriveAddress :: PublicKey -> Address
-deriveAddress = Address . encodePublicKey
 
 txInfo :: Transaction -> [String]
 txInfo tx = let
@@ -247,7 +239,7 @@ handleClientNodeExchange nodeState clientNodeExchange =
                     tId <- myThreadId
                     putStrLn $  "[" <> show tId <> "] Signature verified " <> show transfer
                     timestamp <- now
-                    let transactionId = TransactionId $  hashSignature signature
+                    let transactionId = TransactionId $  encodeSignature signature
                     let tx = Transaction transactionId transfer signature timestamp
                     pure $ (SubmitResp $ Just transactionId, AddTransactionToNode tx)
                 False -> pure $ (SubmitResp Nothing, NoAction)
@@ -273,7 +265,7 @@ handleClientNodeExchange nodeState clientNodeExchange =
                         let genesisPk = (from . fst) genesisTransfer
                         let transfer = Transfer genesisPk address 1000
                         let signature = signTransfer (snd nodeKeyPair) transfer
-                        let transactionId = TransactionId $ hashSignature signature
+                        let transactionId = TransactionId $ encodeSignature signature
                         timestamp <- now
                         let tx = Transaction transactionId transfer signature timestamp
                         pure $ (StringResp $  "Registration successful: " <> addressStr, AddTransactionToNode tx)
@@ -291,7 +283,7 @@ synchonizeBlockChain nodeState n cc @ Conversation {..} = do
   tId <- myThreadId
   putStrLn $ "[" <> show tId <> "] Synchronizing. Asking for block " <> show n
   response <- send (BL.toStrict $ encode (NExchange $ QueryBlock n)) *> recv
-  case toExchangeResponse response of
+  case decodeExchangeResponse response of
     BlockResponse (Just block) -> do
       putStrLn $ "[" <> show tId <> "] Synchronizing. Block number " <> show n <> " received. Adding it to blockchain"
       addBlock block nodeState
@@ -311,7 +303,7 @@ neighbourHandler nodeState broadcastChannel nodeId cc @ Conversation {..} = do
         ", reading from channel"
     broadcast <- readChan broadcastChannel
     response <- send (BL.toStrict $ encode (NExchange $ broadcastToExchange broadcast)) *> recv
-    let dec = toExchangeResponse response
+    let dec = decodeExchangeResponse response
     putStrLn $ "[" <> show tId <> "] CONNECTED and recieved nodeId " <> show (unNodeId nodeId) <> ", exchange response " <> show dec
     loop --neighbourHandler nodeState broadcastChannel nodeId cc
 
@@ -364,7 +356,7 @@ commu nodeState conversation = do
                 "[" <> show tId <> "] node " <> myId <>
                 " received some input " <>
                 (show (length (BS.unpack input)))
-            let exchange = toExchange input
+            let exchange = decodeExchange input
             putStrLn $ "[" <> show tId <> "] received exchange: " <> show exchange
             (exchangeResponse, action) <-
                 case exchange of

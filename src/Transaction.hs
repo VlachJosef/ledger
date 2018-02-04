@@ -4,23 +4,16 @@
 
 module Transaction where
 
+import Address
 import Crypto.Sign.Ed25519
 import Data.Binary
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BL
 import Data.Semigroup
-import Data.Time.Clock.POSIX (getPOSIXTime)
 import qualified GHC.Generics as G
-import Time
+import Time (Timestamp)
 import Utils
-
-newtype Address = Address
-    { rawAddress :: ByteString
-    } deriving (Read, Eq, Ord, Monoid, Binary)
-
-instance Show Address where
-    show = BS.unpack . rawAddress
 
 data Transfer = Transfer
     { from :: PublicKey
@@ -30,7 +23,7 @@ data Transfer = Transfer
 
 instance Show Transfer where
     show transfer =
-        "from " <> (show . Address . encodePublicKey . from) transfer <> ", to " <>
+        "from " <> (show . deriveAddress . from) transfer <> ", to " <>
         (show . to) transfer <>
         ", amount " <>
         (show . amount) transfer
@@ -91,9 +84,6 @@ verifyTx Transaction {..} =
     in if dverify pk enc signature
            then (Right ())
            else (Left InvalidSignature)
-
-now :: IO Timestamp
-now = round <$> (* 1000000) <$> getPOSIXTime
 -- text :: (PublicKey -> Address) -> IO Transaction
 -- text f = do
 --     (pk, sk) <- createKeypair

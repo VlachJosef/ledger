@@ -4,6 +4,7 @@
 
 module Ledger where
 
+import Address
 import Block as B
 import Control.Concurrent
 import Control.Exception

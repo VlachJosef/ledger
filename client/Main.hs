@@ -65,5 +65,6 @@ connectNode clientConfig sk conversation = do
         ("Client id " <> (show . unNodeId . clientId) clientConfig <>
          ". Connected to node id " <>
          (show . unNodeId . nodeId) clientConfig)
-    register sk nc
+    registerResp <- register sk nc
+    putStrLn $ "Registration status: " <> (show registerResp)
     connectClient nc clientConfig sk
