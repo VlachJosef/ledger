@@ -71,7 +71,6 @@ outboundSendRecv socket = Conversation outSend (recvSock socket)
     outSend :: Send
     outSend data_ =
         (maybe id withQSem) sendSem $ do
-            putStrLn ("SEND_DELAY " <> (show sendDelay))
             _ <- traverse msDelay sendDelay
             sendDo data_
     sendDo = sendSock socket

@@ -1,5 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
-
 module Main where
 
 import Client
@@ -23,20 +21,20 @@ handleClient clientConfig = do
     sk <-
         case keyPairDir clientConfig of
             Just filePath -> do
-                mayhe <- readSecretKey filePath
-                case mayhe of
+                maybeSk <- readSecretKey filePath
+                case maybeSk of
                     Nothing -> error $ "No secret key on found in " <> filePath
                     Just sk -> pure sk
             Nothing -> do
-                (pk, sk) <- createKeypair
-                let keyName = hash2 sk
+                (_, sk) <- createKeypair
+                let keyName = hash sk
                 putStrLn $ "Writing key " <> keyName
                 writeSecretKey ("keys/" <> keyName) sk
                 pure sk
     connectToNode clientConfig sk
 
-hash2 :: SecretKey -> String
-hash2 = SHA.showDigest . SHA.sha256 . BL.fromStrict . unSecretKey
+hash :: SecretKey -> String
+hash = SHA.showDigest . SHA.sha256 . BL.fromStrict . unSecretKey
 
 readSecretKey :: FilePath -> IO (Maybe SecretKey)
 readSecretKey filePath = do
@@ -48,8 +46,7 @@ readSecretKey filePath = do
         else pure Nothing
 
 writeSecretKey :: FilePath -> SecretKey -> IO ()
-writeSecretKey filePath sk = do
-    BS.writeFile filePath (unSecretKey sk)
+writeSecretKey filePath sk = BS.writeFile filePath (unSecretKey sk)
 
 connectToNode :: ClientConfig -> SecretKey -> IO ()
 connectToNode clientConfig sk =
@@ -60,7 +57,7 @@ connectToNode clientConfig sk =
 
 connectNode :: ClientConfig -> SecretKey -> Conversation -> IO ()
 connectNode clientConfig sk conversation = do
-    let nc = (NodeConversation conversation)
+    let nc = NodeConversation conversation
     putStrLn
         ("Client id " <> (show . unNodeId . clientId) clientConfig <>
          ". Connected to node id " <>

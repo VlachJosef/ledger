@@ -1,11 +1,12 @@
-module NodeCommandLine where
+module NodeCommandLine
+    ( NodeConfig(..)
+    , parseArguments
+    ) where
 
 import Data.Semigroup ((<>))
 import Options.Applicative
+import OrphanedShow
 import Serokell.Communication.IPC
-
-instance Show NodeId where
-    show (NodeId id) = show id
 
 data NodeConfig = NodeConfig
     { nodeId :: NodeId
@@ -16,8 +17,8 @@ data NodeConfig = NodeConfig
     , resyncTimeout :: Int
     } deriving (Show)
 
-argumentP2 :: Parser NodeConfig
-argumentP2 =
+nodeConfigParser :: Parser NodeConfig
+nodeConfigParser =
     NodeConfig <$>
     (NodeId <$> argument auto (metavar "ID" <> help "Target for the greeting0")) <*>
     argument
@@ -37,19 +38,9 @@ argumentP2 =
         auto
         (metavar "RESYNC_TIMEOUT" <> help "Timeout for ledger synchronization")
 
-aaaa :: ParserInfo NodeConfig
-aaaa =
+parseArguments :: ParserInfo NodeConfig
+parseArguments =
     (info
-         (argumentP2 <**> helper)
+         (nodeConfigParser <**> helper)
          (fullDesc <> progDesc "Print a greeting for TARGET" <>
           header "hello - a test for optparse-applicative"))
-
-argumentPR2 :: String -> ParserResult NodeConfig
-argumentPR2 str =
-    execParserPure
-        (prefs showHelpOnError)
-        (info
-             (argumentP2 <**> helper)
-             (fullDesc <> progDesc "Print a greeting for TARGET" <>
-              header "hello - a test for optparse-applicative"))
-        (words str)

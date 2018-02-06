@@ -58,10 +58,10 @@ toPossibleCmd bs =
                 Nothing ->
                     ErrorCmd
                         ("Amount must be a number, got: " <> (BS.unpack amount))
-                (Just n) -> Cmd $ TransferCmd (Address address) n
+                Just n -> Cmd $ TransferCmd (Address address) n
         unknown -> UnknownCmd
 
-clientCmdToNodeExchange :: SecretKey -> ClientCmd -> ClientNodeExchange
+clientCmdToNodeExchange :: SecretKey -> ClientCmd -> ClientExchange
 clientCmdToNodeExchange sk clientCmd =
     case clientCmd of
         StatusCmd -> FetchStatus
@@ -72,17 +72,17 @@ clientCmdToNodeExchange sk clientCmd =
                 transferSignature = dsign sk (encodeTransfer transfer)
             in MakeTransfer transfer transferSignature
 
-register :: SecretKey -> NodeConversation -> IO ExchangeResponse
+register :: SecretKey -> NodeConversation -> IO ClientExchangeResponse
 register sk conversation =
     let address = deriveAddress (toPublicKey sk)
         exchange = Register address
     in do sendExchange conversation exchange
 
-sendExchange :: NodeConversation -> ClientNodeExchange -> IO ExchangeResponse
+sendExchange :: NodeConversation -> ClientExchange -> IO ClientExchangeResponse
 sendExchange (NodeConversation Conversation {..}) exchange =
-    let encodedExchange = (BL.toStrict . encode . CExchange) exchange
+    let encodedExchange = (BL.toStrict . encode . ClientExchange) exchange
     in do response <- send encodedExchange *> recv
-          pure $ decodeExchangeResponse response
+          pure $ decodeClientExchangeResponse response
 
 connect :: NodeId -> SecretKey -> NodeConversation -> Conversation -> IO Bool
 connect clientId sk nc (Conversation {..}) = do
@@ -110,10 +110,9 @@ connect clientId sk nc (Conversation {..}) = do
             UnknownCmd -> sendResponse "Unknown command"
         nextStep (BS.unpack input) loop
 
-showExchangeResponse :: ExchangeResponse -> String
+showExchangeResponse :: ClientExchangeResponse -> String
 showExchangeResponse =
     \case
-        NExchangeResp x -> show x
         StringResp message -> message
         SubmitResp (Just transactionId) -> show transactionId
         SubmitResp Nothing -> "Transaction has not been accepted"

@@ -5,4 +5,4 @@ import NodeCommandLine
 import Options.Applicative
 
 main :: IO ()
-main = establishClusterConnection =<< execParser aaaa
+main = establishClusterConnection =<< execParser parseArguments

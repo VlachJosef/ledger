@@ -5,36 +5,10 @@
 module Ledger where
 
 import Address
-import Block as B
-import Control.Concurrent
-import Control.Exception
-import Control.Monad
-import Control.Newtype
-import Crypto.Sign.Ed25519
-import Data.Binary
-import qualified Data.ByteString as S
-import qualified Data.ByteString.Base58 as B58
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Conversion as DBC
-import Data.ByteString.Conversion.To
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.Digest.Pure.SHA as SHA
-import Data.Int
 import Data.Map (Map)
-import qualified Data.Map.Strict as MAP
-import Data.Maybe
-import Data.Tuple
-import Debug.Trace
-import Exchange
-import GHC.Generics
-import Text.Read
-import Transaction
-
 import qualified Data.Map.Strict as Map
 import Data.Semigroup
-import Serokell.Communication.IPC
-
-import qualified Network.Socket as Net
+import GHC.Generics
 
 data LedgerError
     = AddressNotFound Address
@@ -56,10 +30,6 @@ instance Show LedgerError where
         "Not enough balance to transfer " <> show balance <> " from " <>
         show address
 
-newtype TxId = TxId
-    { unTxId :: Int
-    } deriving (Eq, Ord, Show, Binary)
-
 type Balance = Int
 
 newtype Ledger =
@@ -73,9 +43,3 @@ instance Show Ledger where
                  acc <> show address <> " " <> show balance <> "\n")
             ""
             ledger
-
-newtype LedgerState =
-    LedgerState (MVar Ledger)
-    deriving (Eq, Generic)
-
-instance Newtype Ledger

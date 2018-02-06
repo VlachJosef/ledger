@@ -4,21 +4,18 @@ module Exchange where
 
 import Address
 import Block
-import Control.Concurrent
 import Crypto.Sign.Ed25519 (Signature)
 import Data.Binary
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BL
-import Data.List
 import Data.List.NonEmpty
 import Data.Semigroup
 import qualified GHC.Generics as G
-import Serokell.Communication.IPC
 import Transaction
 
 data Exchange
-    = NExchange NodeExchange
-    | CExchange ClientNodeExchange
+    = NodeExchange NodeExchange
+    | ClientExchange ClientExchange
     deriving (Show, G.Generic)
 
 instance Binary Exchange
@@ -29,13 +26,9 @@ data NodeExchange
     | AddBlock Block
     deriving (Show, G.Generic)
 
--- instance Show NodeExchange where
---     show (AddTransaction transaction) = "AddTransaction " <> show transaction
---     show (QueryBlock n) = "QuesryBlock " <> show n
---     show (AddBlock b) = "AddBlock " <> show b
 instance Binary NodeExchange
 
-data ClientNodeExchange
+data ClientExchange
     = MakeTransfer Transfer
                    Signature
     | AskBalance Address
@@ -44,7 +37,7 @@ data ClientNodeExchange
     | Register Address
     deriving (G.Generic)
 
-instance Show ClientNodeExchange where
+instance Show ClientExchange where
     show (MakeTransfer transfer signature) =
         "MakeTransfer transfer: " <> show transfer
     show (AskBalance address) = "AskBalance address: " <> show address
@@ -52,7 +45,7 @@ instance Show ClientNodeExchange where
     show FetchStatus = "FetchStatus"
     show (Register address) = "Register address: " <> show address
 
-instance Binary ClientNodeExchange
+instance Binary ClientExchange
 
 data NodeInfo = NodeInfo
     { nId :: Int
@@ -65,28 +58,37 @@ data NodeInfo = NodeInfo
 
 instance Binary NodeInfo
 
-data ExchangeResponse
-    = NExchangeResp Int
-    | SubmitResp (Maybe TransactionId)
+data NodeExchangeResponse
+    = BlockResponse (Maybe Block)
+    | NodeNoResponse
+    deriving (Show, G.Generic)
+
+data ClientExchangeResponse
+    = SubmitResp (Maybe TransactionId)
     | BalanceResp Int
     | QueryResp Bool
     | StringResp String
     | StatusInfo NodeInfo
-    | BlockResponse (Maybe Block)
     deriving (Show, G.Generic)
 
-instance Binary ExchangeResponse
+instance Binary NodeExchangeResponse
 
-data StateAction
-    = AddTransactionToNode Transaction
-    | NoAction
+instance Binary ClientExchangeResponse
 
 data Broadcast
     = TxBroadcast Transaction
     | BlockBroadcast Block
 
-decodeExchange :: ByteString -> Exchange
-decodeExchange = decode . BL.fromStrict
+decodeExchangeAs
+    :: Binary a
+    => ByteString -> a
+decodeExchangeAs = decode . BL.fromStrict
 
-decodeExchangeResponse :: ByteString -> ExchangeResponse
-decodeExchangeResponse = decode . BL.fromStrict
+decodeExchange :: ByteString -> Exchange
+decodeExchange = decodeExchangeAs
+
+decodeNodeExchangeResponse :: ByteString -> NodeExchangeResponse
+decodeNodeExchangeResponse = decodeExchangeAs
+
+decodeClientExchangeResponse :: ByteString -> ClientExchangeResponse
+decodeClientExchangeResponse = decodeExchangeAs

@@ -13,7 +13,6 @@ import qualified Data.ByteString.Lazy as BL
 import Data.Semigroup
 import qualified GHC.Generics as G
 import Time (Timestamp)
-import Utils
 
 data Transfer = Transfer
     { from :: PublicKey
