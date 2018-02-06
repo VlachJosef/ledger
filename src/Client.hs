@@ -12,7 +12,6 @@ module Client
 import Address
 import ClientCommandLine
 import Control.Concurrent
-import Control.Exception
 import Crypto.Sign.Ed25519
 import Data.Binary
 import qualified Data.ByteString as S
@@ -59,7 +58,7 @@ toPossibleCmd bs =
                     ErrorCmd
                         ("Amount must be a number, got: " <> (BS.unpack amount))
                 Just n -> Cmd $ TransferCmd (Address address) n
-        unknown -> UnknownCmd
+        _ -> UnknownCmd
 
 clientCmdToNodeExchange :: SecretKey -> ClientCmd -> ClientExchange
 clientCmdToNodeExchange sk clientCmd =
@@ -81,8 +80,8 @@ register sk conversation =
 sendExchange :: NodeConversation -> ClientExchange -> IO ClientExchangeResponse
 sendExchange (NodeConversation Conversation {..}) exchange =
     let encodedExchange = (BL.toStrict . encode . ClientExchange) exchange
-    in do response <- send encodedExchange *> recv
-          pure $ decodeClientExchangeResponse response
+    in do resp <- send encodedExchange *> recv
+          pure $ decodeClientExchangeResponse resp
 
 connect :: NodeId -> SecretKey -> NodeConversation -> Conversation -> IO Bool
 connect clientId sk nc (Conversation {..}) = do
@@ -106,7 +105,7 @@ connect clientId sk nc (Conversation {..}) = do
             Cmd clientCmd -> do
                 exchangeResp <- (sendNodeExchange . ccToNodeExchange) clientCmd
                 sendResponse $ showExchangeResponse exchangeResp
-            ErrorCmd error -> sendResponse error
+            ErrorCmd err -> sendResponse err
             UnknownCmd -> sendResponse "Unknown command"
         nextStep (BS.unpack input) loop
 
@@ -137,7 +136,7 @@ prettyPrintStatusInfo NodeInfo {..} =
     ledger
 
 nextStep :: String -> IO () -> IO ()
-nextStep "" io = putStrLn "Closed by peer!"
+nextStep "" _ = putStrLn "Closed by peer!"
 nextStep _ io = io
 
 response :: String -> S.ByteString

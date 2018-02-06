@@ -38,8 +38,7 @@ data ClientExchange
     deriving (G.Generic)
 
 instance Show ClientExchange where
-    show (MakeTransfer transfer signature) =
-        "MakeTransfer transfer: " <> show transfer
+    show (MakeTransfer tran _) = "MakeTransfer transfer: " <> show tran
     show (AskBalance address) = "AskBalance address: " <> show address
     show (Query txId) = "Query txId: " <> show txId
     show FetchStatus = "FetchStatus"

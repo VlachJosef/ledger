@@ -10,9 +10,8 @@ import Address
 import Data.Functor
 import Block
 import Control.Concurrent
-import Control.Concurrent.Chan
 import Control.Exception
-import Crypto.Sign.Ed25519 (PublicKey(..), Signature, unSignature)
+import Crypto.Sign.Ed25519 (Signature)
 import Data.Binary
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
@@ -106,7 +105,7 @@ handleNodeExchange nodeState =
         else do
             modifyMVar_
                 (transactionPool nodeState)
-                (\txs -> pure $ tx : txs)
+                (\transactions -> pure $ tx : transactions)
             logThread $ "Transaction " <> show tx <> " successsfully added to the poll and to the broadcast. Total number of transactions in pool: " <> (show $ length txs + 1)
             writeChan (broadcastChannel nodeState) (TxBroadcast tx)
             pure NodeNoResponse
@@ -115,7 +114,7 @@ handleNodeExchange nodeState =
       let block = find (\b -> Block.index b == n) blocks
       pure $ BlockResponse block
     AddBlock block -> do
-      addBlock block nodeState
+      _ <- addBlock block nodeState
       pure NodeNoResponse
 
 
@@ -160,7 +159,7 @@ applyTransactions ledger = foldr applyTransaction ([], ledger, [])
 applyTransaction :: Transaction -> ([LedgerError], Ledger, [Transaction]) -> ([LedgerError], Ledger, [Transaction])
 applyTransaction tx (errors, l@(Ledger ledger), validTransactions) =
   case updatedLedger of
-    Left error -> (error : errors, l, validTransactions)
+    Left err -> (err : errors, l, validTransactions)
     Right led -> (errors, led, tx : validTransactions)
   where
     tran = transfer tx
@@ -226,7 +225,7 @@ handleClientExchange nodeState =
           timestamp <- now
           let transactionId = createTransaction signature
           let tx = Transaction transactionId transfer signature timestamp
-          handleNodeExchange nodeState (AddTransaction tx)
+          _ <- handleNodeExchange nodeState (AddTransaction tx)
           pure $ SubmitResp $ Just transactionId
         else pure $ SubmitResp Nothing
 
@@ -234,7 +233,7 @@ handleClientExchange nodeState =
       Ledger ledger <- readMVar (nodeLedger nodeState)
       pure $ case Map.lookup address ledger of
         Nothing -> StringResp $ "Balance error, unknown address: " <> show address
-        Just balance -> BalanceResp balance
+        Just bal -> BalanceResp bal
 
     Query txId -> do
       blocks <- readMVar (blockchain nodeState)
@@ -248,7 +247,7 @@ handleClientExchange nodeState =
       let maybeTx = isClientRegistered address ledger txs timestamp
       case maybeTx of
         Just tx -> do
-          handleNodeExchange nodeState (AddTransaction tx)
+          _ <- handleNodeExchange nodeState (AddTransaction tx)
           pure $ StringResp $ "Registration successful: " <> show address
         Nothing -> pure $ StringResp $ "Address " <> show address <> " already registered."
 
@@ -278,7 +277,7 @@ synchonizeBlockChain nodeState n cc @ Conversation {..} = do
   case decodeNodeExchangeResponse response of
     BlockResponse (Just block) -> do
       logThread $ "Synchronizing. Block number " <> show n <> " received. Adding it to blockchain"
-      addBlock block nodeState
+      _ <- addBlock block nodeState
       synchonizeBlockChain nodeState (n + 1) cc
     BlockResponse Nothing -> logThread $ "Synchronizing. Block number " <> show n <> " don't received. Synchronization complete."
     other -> logThread $ "Error: Expected BlockResponse got: " <> show other
@@ -340,7 +339,7 @@ commu nodeState conversation = do
   where
     myId = nodeIdFromStateStr nodeState
     loopO :: NodeState -> IO ()
-    loopO nodeState = loop
+    loopO ns = loop
       where
         loop :: IO ()
         loop = do
@@ -350,15 +349,15 @@ commu nodeState conversation = do
             exchangeResponse <-
                 case exchange of
                     NodeExchange nodeExchange ->
-                       encode <$> handleNodeExchange nodeState nodeExchange
+                       encode <$> handleNodeExchange ns nodeExchange
                     ClientExchange clientNodeExchange ->
-                       encode <$> handleClientExchange nodeState clientNodeExchange
+                       encode <$> handleClientExchange ns clientNodeExchange
 
             send conversation (BL.toStrict exchangeResponse)
             nextStep (BS.unpack input) loop
 
 nextStep :: String -> IO () -> IO ()
-nextStep "" io = logThread "Closed by peer!"
+nextStep "" _ = logThread "Closed by peer!"
 nextStep _ io = io
 
 startMinerThread :: NodeState -> IO ()
@@ -368,7 +367,7 @@ establishClusterConnection :: NodeConfig -> IO ()
 establishClusterConnection nodeConfig = do
     nodeState <- initialNodeState nodeConfig
     startMinerThread nodeState
-    connectToNeighbours nodeState
+    _ <- connectToNeighbours nodeState
     listenForClientConnection nodeState
 
 logMessage :: NodeId -> NodeId -> String -> IO ()

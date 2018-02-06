@@ -27,9 +27,9 @@ genesisBlock = Block 1 [genesisTransaction] 0
 
 genesisTransaction :: Transaction
 genesisTransaction =
-    let (transfer, signature) = genesisTransfer
-        transactionId = TransactionId $ encodeSignature signature
-    in Transaction transactionId transfer signature 0
+    let (tran, sig) = genesisTransfer
+        txId = TransactionId $ encodeSignature sig
+    in Transaction txId tran sig 0
 
 nodeKeyPair :: (PublicKey, SecretKey)
 nodeKeyPair =
@@ -43,9 +43,9 @@ genesisValue = 100 * 1000
 genesisTransfer :: (Transfer, Signature)
 genesisTransfer =
     let (pk, sk) = nodeKeyPair
-        transfer = Transfer pk (deriveAddress pk) genesisValue
-        signature = signTransfer sk transfer
-    in (transfer, signature)
+        tran = Transfer pk (deriveAddress pk) genesisValue
+        sig = signTransfer sk tran
+    in (tran, sig)
 
 genesisLedger :: Map.Map Address Int
 genesisLedger =
