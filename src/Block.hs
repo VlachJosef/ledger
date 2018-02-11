@@ -13,9 +13,9 @@ import Transaction
 import Utils
 
 data Block = Block
-    { index :: Int
+    { index        :: Int
     , transactions :: [Transaction]
-    , timestamp :: Timestamp
+    , timestamp    :: Timestamp
     } deriving (Eq, Show, G.Generic)
 
 instance Binary Block
@@ -28,13 +28,13 @@ genesisBlock = Block 1 [genesisTransaction] 0
 genesisTransaction :: Transaction
 genesisTransaction =
     let (tran, sig) = genesisTransfer
-        txId = TransactionId $ encodeSignature sig
+        txId        = TransactionId $ encodeSignature sig
     in Transaction txId tran sig 0
 
 nodeKeyPair :: (PublicKey, SecretKey)
 nodeKeyPair =
     case createKeypairFromSeed_ "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" of
-        Nothing -> error "seed has incorrect length"
+        Nothing       -> error "seed has incorrect length"
         Just (pk, sk) -> (pk, sk)
 
 genesisValue :: Int
@@ -43,12 +43,12 @@ genesisValue = 100 * 1000
 genesisTransfer :: (Transfer, Signature)
 genesisTransfer =
     let (pk, sk) = nodeKeyPair
-        tran = Transfer pk (deriveAddress pk) genesisValue
-        sig = signTransfer sk tran
+        tran     = Transfer pk (deriveAddress pk) genesisValue
+        sig      = signTransfer sk tran
     in (tran, sig)
 
 genesisLedger :: Map.Map Address Int
 genesisLedger =
-    let pk = fst nodeKeyPair
+    let pk      = fst nodeKeyPair
         address = deriveAddress pk
     in Map.insert address genesisValue Map.empty

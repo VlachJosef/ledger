@@ -1,3 +1,3 @@
-# Changelog for simple-hpack
+# Changelog for crypto-ledger
 
 ## Unreleased changes

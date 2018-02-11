@@ -10,9 +10,9 @@ import OrphanedShow
 import Serokell.Communication.IPC
 
 data ClientConfig = ClientConfig
-    { clientId :: NodeId
-    , nodeId :: NodeId
-    , socketDir :: Maybe FilePath
+    { clientId   :: NodeId
+    , nodeId     :: NodeId
+    , socketDir  :: Maybe FilePath
     , keyPairDir :: Maybe FilePath
     } deriving (Show)
 

@@ -22,10 +22,9 @@ data Transfer = Transfer
 
 instance Show Transfer where
     show transfer =
-        "from " <> (show . deriveAddress . from) transfer <> ", to " <>
-        (show . to) transfer <>
-        ", amount " <>
-        (show . amount) transfer
+           "from "     <> (show . deriveAddress . from) transfer
+        <> ", to "     <> (show . to) transfer
+        <> ", amount " <> (show . amount) transfer
 
 newtype TransactionId = TransactionId
     { unTransactionId :: ByteString
@@ -43,12 +42,13 @@ data Transaction = Transaction
 
 instance Show Transaction where
     show transaction =
-        "transactionId: " <> (show . transactionId) transaction <> "\n" <>
-        "transfer: " <>
-        (show . transfer) transaction <>
-        "\n" <>
-        "timestamp: " <>
-        (show . Transaction.timestamp) transaction
+           "transactionId: " <> (show . transactionId) transaction
+        <> "\ntransfer: "    <> (show . transfer) transaction
+        <> "\ntimestamp: "   <> (show . Transaction.timestamp) transaction
+
+data TransactionError =
+    InvalidSignature
+    deriving (Show)
 
 instance Binary PublicKey
 
@@ -66,10 +66,6 @@ encodeTransfer transfer = BL.toStrict (encode transfer)
 signTransfer :: SecretKey -> Transfer -> Signature
 signTransfer sk tx = dsign sk (encodeTransfer tx)
 
-data TransactionError =
-    InvalidSignature
-    deriving (Show)
-
 verifyTransfer :: Signature -> Transfer -> Bool
 verifyTransfer signature transfer =
     let pk = from transfer
@@ -83,12 +79,3 @@ verifyTx Transaction {..} =
     in if dverify pk enc signature
            then (Right ())
            else (Left InvalidSignature)
--- text :: (PublicKey -> Address) -> IO Transaction
--- text f = do
---     (pk, sk) <- createKeypair
---     let toAddress = f pk
---     (pk2, sk2) <- createKeypair
---     let transfer = Transfer pk2 toAddress 100
---     let sign1 = signTransfer sk transfer
---     let tx1 = Transaction transfer sign1 0
---     pure tx1

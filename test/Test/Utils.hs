@@ -1,0 +1,61 @@
+module Test.Utils where
+
+import Address
+import Block
+import Control.Newtype
+import Crypto.Sign.Ed25519
+import qualified Data.ByteString.Char8 as C
+import qualified Data.Map.Strict as Map
+import Ledger
+import Time
+import Transaction
+import Utils
+
+keysFactory :: String -> PublicKey
+keysFactory seed =
+    case createKeypairFromSeed_ (C.pack seed) of
+        Nothing -> error "seed has incorrect length"
+        Just (pk, _) -> pk
+
+testPk :: PublicKey
+testPk = keysFactory "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+testPk2 :: PublicKey
+testPk2 = keysFactory "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+
+mkAddress :: PublicKey -> Address
+mkAddress = Address . encodePublicKey
+
+emptyLedger :: Ledger
+emptyLedger = Ledger (Map.empty)
+
+addLedger :: (PublicKey, Int) -> Ledger -> Ledger
+addLedger (pk, amountToAdd) ledgerInitial =
+    over
+        Ledger
+        (Map.insert (Address $ encodePublicKey pk) amountToAdd)
+        ledgerInitial
+
+ledgerOf :: [(PublicKey, Int)] -> Ledger
+ledgerOf = foldr addLedger emptyLedger
+
+dummySignature :: Signature
+dummySignature = Signature (C.pack "dummy-ignature")
+
+dummyTxId :: TransactionId
+dummyTxId = TransactionId (C.pack "dummy-txId")
+
+dummyTimestamp :: Timestamp
+dummyTimestamp = 0
+
+mkTransaction :: PublicKey -> PublicKey -> Balance -> Transaction
+mkTransaction fromPk toPk bal =
+    Transaction dummyTxId testTransfer dummySignature dummyTimestamp
+  where
+    testTransfer = Transfer fromPk (mkAddress toPk) bal
+
+emptyBlock :: Block
+emptyBlock = mkBlock []
+
+mkBlock :: [Transaction] -> Block
+mkBlock txs = Block {index = 1, transactions = txs, Block.timestamp = 0}

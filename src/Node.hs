@@ -4,8 +4,12 @@
 
 module Node
     ( establishClusterConnection
+    , NodeState(..)
+    , addBlock
+    , initialNodeState
     ) where
 
+import Node.Internal
 import Address
 import Data.Functor
 import Block
@@ -29,15 +33,7 @@ import Utils
 import Transaction
 import Text.PrettyPrint.Boxes as Boxes (render, vcat, hsep, left, text)
 import Time
-
-data NodeState = NodeState
-    { nodeConfig :: NodeConfig
-    , neighbours :: [NodeId]
-    , blockchain :: MVar BlockChain
-    , transactionPool :: MVar [Transaction]
-    , nodeLedger :: MVar Ledger
-    , broadcastChannel :: Chan Broadcast
-    }
+import Node.Data
 
 calculateNeighbours :: NodeConfig -> [NodeId]
 calculateNeighbours nodeConfig =
@@ -78,9 +74,9 @@ mineblock nodeState = loop where
       maybeValidBlock <- addBlock nextBlock nodeState
       case maybeValidBlock of
         Nothing -> logThread $ "Mining failed, block number " <> show nextBlock <> " already exists."
-        Just validBlock -> do
-          writeChan (broadcastChannel nodeState) (BlockBroadcast validBlock)
-          let validCount = (length . transactions) validBlock
+        Just addedBlock -> do
+          writeChan (broadcastChannel nodeState) (BlockBroadcast addedBlock)
+          let validCount = (length . transactions) addedBlock
           let invalidCount = length txs - validCount
           logThread $ "Mined block " <> show nextBlockId <> " of " <> show validCount <> " valid transactions and " <> show invalidCount <> " invalid transactions."
 
@@ -106,7 +102,9 @@ handleNodeExchange nodeState =
             modifyMVar_
                 (transactionPool nodeState)
                 (\transactions -> pure $ tx : transactions)
-            logThread $ "Transaction " <> show tx <> " successsfully added to the poll and to the broadcast. Total number of transactions in pool: " <> (show $ length txs + 1)
+            logThread $ "Transaction " <> show tx
+              <> " successsfully added to the poll and to the broadcast. Total number of transactions in pool: "
+              <> (show $ length txs + 1)
             writeChan (broadcastChannel nodeState) (TxBroadcast tx)
             pure NodeNoResponse
     QueryBlock n -> do
@@ -117,67 +115,33 @@ handleNodeExchange nodeState =
       _ <- addBlock block nodeState
       pure NodeNoResponse
 
-
 addBlock :: Block -> NodeState -> IO (Maybe Block)
-addBlock block nodeState = do
-  blocks <- takeMVar (blockchain nodeState)
-  let recievedBlockId = index block
-  let expectedBlockId = ((+1) . index . NEL.head) blocks
-  if expectedBlockId == recievedBlockId
-    then do
-      logThread $ "Adding block " <> show recievedBlockId <> " to the blockchain."
+addBlock block nodeState = let
+     blocksM = blockchain nodeState
+     ledgerM = nodeLedger nodeState
+     txPoolM = transactionPool nodeState
+  in do
+  blocks <- takeMVar blocksM
+  ledger <- takeMVar ledgerM
+  case addReplaceBlock block nodeState blocks ledger of
+    BlockAdded errors addedBlock ledgerUpd -> do
+      logThread $ "Adding block " <> show (index block) <> " to the blockchain."
       -- Remove transactions from transaction pool which are in the newly added block
-      let txs = transactions block
-      modifyMVar_ (transactionPool nodeState) (\txs2 -> pure $ txs2 \\ txs)
-
-      -- Update Ledger
-      logThread $ "Reconciling ledger!"
-      let ledgerM = nodeLedger nodeState
-      ledger <- takeMVar ledgerM
-      let (errors, ledgerUpd, validTransactions) = applyTransactions ledger txs
-
-      let validBlock = block { transactions = validTransactions }
+      modifyMVar_ txPoolM (\txs -> pure $ txs \\ transactions addedBlock)
 
       reportProblems errors
-
       putMVar ledgerM ledgerUpd
+      putMVar blocksM (addedBlock <| blocks)
+      pure $ Just addedBlock
 
-      -- Add block itself
-      putMVar (blockchain nodeState) (validBlock <| blocks)
-      pure $ Just validBlock
-    else do
-      putMVar (blockchain nodeState) blocks
-      logThread $ "Expecting " <> show expectedBlockId <> " block index. Received " <>  show recievedBlockId <> " block index."
+    BlockNotAdded msg -> do
+      putMVar ledgerM ledger
+      putMVar blocksM blocks
+      logThread msg
       pure Nothing
 
 reportProblems :: [LedgerError] -> IO ()
 reportProblems errors = sequence_ $ (logThread . show) <$> errors
-
-applyTransactions :: Ledger -> [Transaction] -> ([LedgerError], Ledger, [Transaction])
-applyTransactions ledger = foldr applyTransaction ([], ledger, [])
-
-applyTransaction :: Transaction -> ([LedgerError], Ledger, [Transaction]) -> ([LedgerError], Ledger, [Transaction])
-applyTransaction tx (errors, l@(Ledger ledger), validTransactions) =
-  case updatedLedger of
-    Left err -> (err : errors, l, validTransactions)
-    Right led -> (errors, led, tx : validTransactions)
-  where
-    tran = transfer tx
-    fromAccount = (deriveAddress . from) tran
-    toAccount = to tran
-    amountToPay = amount tran
-
-    updatedLedger = do
-      f <- balance l fromAccount
-      if f >= amountToPay
-        then let ledgerUpd = Map.insertWith (flip (-)) fromAccount amountToPay ledger
-                 ledgerUpd2 = Map.insertWith (+) toAccount amountToPay ledgerUpd
-             in Right $ Ledger ledgerUpd2
-        else Left $ InsufficientBalance fromAccount toAccount amountToPay
-
-balance :: Ledger -> Address -> Either LedgerError Balance
-balance (Ledger ledger) address =
-    maybe (Left $ AddressNotFound address) Right (Map.lookup address ledger)
 
 txInfo :: Transaction -> [String]
 txInfo tx =
@@ -211,7 +175,7 @@ nodeStatus nodeState = do
             (show ledger)
 
 createTransaction :: Signature -> TransactionId
-createTransaction = TransactionId . encodeSignature 
+createTransaction = TransactionId . encodeSignature
 
 handleClientExchange :: NodeState
                          -> ClientExchange
@@ -296,7 +260,7 @@ neighbourHandler nodeState broadcastChannel nodeId cc @ Conversation {..} = do
     loop
 
 encodeNodeExchange :: NodeExchange -> ByteString
-encodeNodeExchange = BL.toStrict . encode . NodeExchange 
+encodeNodeExchange = BL.toStrict . encode . NodeExchange
 
 connectToNeighbour :: NodeState -> Chan Broadcast -> NodeId -> IO ()
 connectToNeighbour nodeState broadcastChan nodeId =
@@ -307,14 +271,9 @@ connectToNeighbour nodeState broadcastChan nodeId =
              (neighbourHandler nodeState broadcastChan nodeId)) >>=
     retry nodeState broadcastChan nodeId
 
-logThread :: String -> IO ()
-logThread msg = do
-    tId <- myThreadId
-    putStrLn $ "[" <> show tId <> "] " <> msg
-
 retry :: NodeState -> Chan Broadcast -> NodeId -> Either IOException a -> IO ()
 retry nodeState broadcastChan nodeId = let
-  nId = show (unNodeId nodeId)
+  nId = showNodeId nodeId
   in \case
   Right _ ->
     logThread $ "Connection to nodeId " <> nId <> " successful!!!"
@@ -329,17 +288,17 @@ nodeIdFromState :: NodeState -> NodeId
 nodeIdFromState = nodeId . nodeConfig
 
 nodeIdFromStateStr :: NodeState -> String
-nodeIdFromStateStr = show . unNodeId . nodeIdFromState
+nodeIdFromStateStr = showNodeId . nodeIdFromState
 
 commu :: NodeState -> Conversation -> IO Bool
 commu nodeState conversation = do
-    True <$ do
-        forkIO $
-            logThread ("node " <> myId <> ". Forking new thread!") <* loopO nodeState
+  True <$
+    forkIO
+      (logThread $ "Node " <> myId <> ". Forking new thread!") <* loopMain nodeState
   where
     myId = nodeIdFromStateStr nodeState
-    loopO :: NodeState -> IO ()
-    loopO ns = loop
+    loopMain :: NodeState -> IO ()
+    loopMain ns = loop
       where
         loop :: IO ()
         loop = do
@@ -356,12 +315,8 @@ commu nodeState conversation = do
             send conversation (BL.toStrict exchangeResponse)
             nextStep (BS.unpack input) loop
 
-nextStep :: String -> IO () -> IO ()
-nextStep "" _ = logThread "Closed by peer!"
-nextStep _ io = io
-
 startMinerThread :: NodeState -> IO ()
-startMinerThread = void . forkIO . mineblock 
+startMinerThread = void . forkIO . mineblock
 
 establishClusterConnection :: NodeConfig -> IO ()
 establishClusterConnection nodeConfig = do
@@ -372,8 +327,8 @@ establishClusterConnection nodeConfig = do
 
 logMessage :: NodeId -> NodeId -> String -> IO ()
 logMessage nodeId neighbourId msg =
-   let myId = show (unNodeId nodeId)
-       nId = show (unNodeId neighbourId)
+   let myId = showNodeId nodeId
+       nId = showNodeId neighbourId
    in logThread $ "node " <> myId <> ". " <> msg <> " with node: " <> nId
 
 connectToNeighbours :: NodeState -> IO [ThreadId]
@@ -386,8 +341,7 @@ connectToNeighbours nodeState =
                        (do logMessage myId nId "Trying to establish connecting"
                            myChan <- dupChan (broadcastChannel nodeState)
                            connectToNeighbour nodeState myChan nId
-                           logMessage myId nId "Terminating connection")) <$>
-              nodeNeighbours
+                           logMessage myId nId "Terminating connection")) <$> nodeNeighbours
 
 listenForClientConnection :: NodeState -> IO ()
 listenForClientConnection nodeState = do

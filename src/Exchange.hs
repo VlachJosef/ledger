@@ -39,20 +39,20 @@ data ClientExchange
 
 instance Show ClientExchange where
     show (MakeTransfer tran _) = "MakeTransfer transfer: " <> show tran
-    show (AskBalance address) = "AskBalance address: " <> show address
-    show (Query txId) = "Query txId: " <> show txId
-    show FetchStatus = "FetchStatus"
-    show (Register address) = "Register address: " <> show address
+    show (AskBalance address)  = "AskBalance address: " <> show address
+    show (Query txId)          = "Query txId: " <> show txId
+    show FetchStatus           = "FetchStatus"
+    show (Register address)    = "Register address: " <> show address
 
 instance Binary ClientExchange
 
 data NodeInfo = NodeInfo
-    { nId :: Int
-    , txPoolCount :: Int
-    , blockCount :: Int
+    { nId            :: Int
+    , txPoolCount    :: Int
+    , blockCount     :: Int
     , neighbourNodes :: [Int]
-    , blocksInfo :: NonEmpty String
-    , ledger :: String
+    , blocksInfo     :: NonEmpty String
+    , ledger         :: String
     } deriving (Show, G.Generic)
 
 instance Binary NodeInfo

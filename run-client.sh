@@ -24,7 +24,7 @@ case "$#" in
 	fi
 
 	stack build
-	./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-client -c $CLIENT_ID -k keys/$SECRET_KEY
+	./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-ledger-client -c $CLIENT_ID -k keys/$SECRET_KEY
 	;;
     2)  echo "Launching client with id $1. Connecting to node $2."
     	CLIENT_ID=$1
@@ -38,7 +38,7 @@ case "$#" in
 	fi
 
 	stack build
-	./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-client -c $CLIENT_ID -n $NODE_ID -k keys/$SECRET_KEY
+	./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-ledger-client -c $CLIENT_ID -n $NODE_ID -k keys/$SECRET_KEY
 	;;
     3)  echo "Launching client with id $1. Connecting to node $2. Using key $3."
     	CLIENT_ID=$1
@@ -52,7 +52,7 @@ case "$#" in
 	fi
 
 	stack build
-	./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-client -c $CLIENT_ID -n $NODE_ID -k keys/$SECRET_KEY
+	./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-ledger-client -c $CLIENT_ID -n $NODE_ID -k keys/$SECRET_KEY
 	;;
     *)
 	help

@@ -2,16 +2,15 @@ module Main where
 
 import Client
 import ClientCommandLine
-import Control.Concurrent
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Digest.Pure.SHA as SHA
 import Data.Monoid
 import Options.Applicative
 import Serokell.Communication.IPC
 import System.Directory (doesFileExist)
+import Utils
 
 main :: IO ()
 main = handleClient =<< execParser parseArguments
@@ -28,7 +27,7 @@ handleClient clientConfig = do
             Nothing -> do
                 (_, sk) <- createKeypair
                 let keyName = hash sk
-                putStrLn $ "Writing key " <> keyName
+                logThread $ "Writing key " <> keyName
                 writeSecretKey ("keys/" <> keyName) sk
                 pure sk
     connectToNode clientConfig sk
@@ -58,10 +57,7 @@ connectToNode clientConfig sk =
 connectNode :: ClientConfig -> SecretKey -> Conversation -> IO ()
 connectNode clientConfig sk conversation = do
     let nc = NodeConversation conversation
-    putStrLn
-        ("Client id " <> (show . unNodeId . clientId) clientConfig <>
-         ". Connected to node id " <>
-         (show . unNodeId . nodeId) clientConfig)
+    logThread $ "Client id " <> (showNodeId . clientId) clientConfig <> ". Connected to node id " <> (showNodeId . nodeId) clientConfig
     registerResp <- register sk nc
-    putStrLn $ "Registration status: " <> (show registerResp)
+    logThread $ "Registration status: " <> (show registerResp)
     connectClient nc clientConfig sk

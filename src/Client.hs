@@ -23,6 +23,7 @@ import Data.Semigroup
 import Exchange
 import Serokell.Communication.IPC
 import Transaction
+import Utils
 
 data PossibleCmd
     = Cmd ClientCmd
@@ -48,26 +49,23 @@ convertToInt = DBC.fromByteString
 toPossibleCmd :: S.ByteString -> PossibleCmd
 toPossibleCmd bs =
     case BS.words bs of
-        ["status"] -> Cmd StatusCmd
-        ["s"] -> Cmd StatusCmd
+        ["status"]           ->  Cmd StatusCmd
         ["BALANCE", address] -> (Cmd . BalanceCmd . Address) address
-        ["QUERY", txId] -> (Cmd . QueryCmd . TransactionId) txId
+        ["QUERY", txId]      -> (Cmd . QueryCmd . TransactionId) txId
         ["SUBMIT", address, amount] ->
             case convertToInt amount of
-                Nothing ->
-                    ErrorCmd
-                        ("Amount must be a number, got: " <> (BS.unpack amount))
-                Just n -> Cmd $ TransferCmd (Address address) n
+                Nothing -> ErrorCmd ("Amount must be a number, got: " <> (BS.unpack amount))
+                Just n  -> Cmd $ TransferCmd (Address address) n
         _ -> UnknownCmd
 
 clientCmdToNodeExchange :: SecretKey -> ClientCmd -> ClientExchange
 clientCmdToNodeExchange sk clientCmd =
     case clientCmd of
-        StatusCmd -> FetchStatus
+        StatusCmd          -> FetchStatus
         BalanceCmd address -> AskBalance address
-        QueryCmd txId -> Query txId
+        QueryCmd txId      -> Query txId
         TransferCmd address amount ->
-            let transfer = Transfer (toPublicKey sk) address amount
+            let transfer  = Transfer (toPublicKey sk) address amount
                 transferSignature = dsign sk (encodeTransfer transfer)
             in MakeTransfer transfer transferSignature
 
@@ -85,59 +83,44 @@ sendExchange (NodeConversation Conversation {..}) exchange =
 
 connect :: NodeId -> SecretKey -> NodeConversation -> Conversation -> IO Bool
 connect clientId sk nc (Conversation {..}) = do
-    True <$
-        forkIO
-            ((do tId <- myThreadId
-                 putStrLn $
-                     "[" <> show tId <> "] client " <> show (unNodeId clientId) <>
-                     ". Forking new thread ") <* do loop)
+  True <$
+    forkIO
+       (logThread $ "Client " <> showNodeId clientId <> ". Forking new thread!") <* loop
   where
     sendNodeExchange = sendExchange nc
     ccToNodeExchange = clientCmdToNodeExchange sk
     sendResponse = send . response
     loop :: IO ()
     loop = do
-        tId <- myThreadId
         input <- recv
         let possibleCmd = toPossibleCmd input
-        putStrLn $ "[" <> show tId <> "] Command received: " <> show possibleCmd
+        logThread $ "Command received: " <> show possibleCmd
         case possibleCmd of
             Cmd clientCmd -> do
                 exchangeResp <- (sendNodeExchange . ccToNodeExchange) clientCmd
                 sendResponse $ showExchangeResponse exchangeResp
             ErrorCmd err -> sendResponse err
-            UnknownCmd -> sendResponse "Unknown command"
+            UnknownCmd   -> sendResponse "Unknown command"
         nextStep (BS.unpack input) loop
 
 showExchangeResponse :: ClientExchangeResponse -> String
 showExchangeResponse =
     \case
-        StringResp message -> message
+        StringResp message              -> message
         SubmitResp (Just transactionId) -> show transactionId
-        SubmitResp Nothing -> "Transaction has not been accepted"
-        BalanceResp balance -> show balance
-        QueryResp wasAdded -> show wasAdded
-        StatusInfo nodeInfo -> prettyPrintStatusInfo nodeInfo
+        SubmitResp Nothing              -> "Transaction has not been accepted"
+        BalanceResp balance             -> show balance
+        QueryResp wasAdded              -> show wasAdded
+        StatusInfo nodeInfo             -> prettyPrintStatusInfo nodeInfo
 
 prettyPrintStatusInfo :: NodeInfo -> String
 prettyPrintStatusInfo NodeInfo {..} =
-    "NodeId         : " <> (show nId) <> "\n" <> "TxPoolCount    : " <>
-    (show txPoolCount) <>
-    "\n" <>
-    "Neighbour nodes: " <>
-    (show neighbourNodes) <>
-    "\n" <>
-    "Block count    : " <>
-    (show blockCount) <>
-    "\n" <>
-    "Blocks Info    : " <>
-    (foldl (<>) "\n" blocksInfo) <>
-    "Ledger:\n" <>
-    ledger
-
-nextStep :: String -> IO () -> IO ()
-nextStep "" _ = putStrLn "Closed by peer!"
-nextStep _ io = io
+         "NodeId         : " <> show nId
+    <> "\nTxPoolCount    : " <> show txPoolCount
+    <> "\nNeighbour nodes: " <> show neighbourNodes
+    <> "\nBlock count    : " <> show blockCount
+    <> "\nBlocks Info    : " <> foldl (<>) "\n" blocksInfo
+    <> "Ledger:\n" <> ledger
 
 response :: String -> S.ByteString
 response str = BL.toStrict (toByteString (str <> "\n"))
