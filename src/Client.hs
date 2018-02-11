@@ -84,8 +84,7 @@ sendExchange (NodeConversation Conversation {..}) exchange =
 connect :: NodeId -> SecretKey -> NodeConversation -> Conversation -> IO Bool
 connect clientId sk nc (Conversation {..}) = do
   True <$
-    forkIO
-       (logThread $ "Client " <> showNodeId clientId <> ". Forking new thread!") <* loop
+    forkIO ((logThread $ "Client " <> showNodeId clientId <> ". Forking new thread!") <* loop)
   where
     sendNodeExchange = sendExchange nc
     ccToNodeExchange = clientCmdToNodeExchange sk

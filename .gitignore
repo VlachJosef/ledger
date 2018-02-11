@@ -2,3 +2,4 @@
 crypto-ledger.cabal
 *~
 keys/
+sockets/

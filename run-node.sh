@@ -10,21 +10,6 @@ function help {
 }
 
 case "$#" in
-    1)
-	echo "Launching NodeId $1"
-
-	NODE_ID=$1
-	SOCKET_FILE="./sockets/${NODE_ID}.sock"
-
-	if [ -e "$SOCKET_FILE" ]; then
-	    echo "Removing $SOCKET_FILE"
-	    rm $SOCKET_FILE
-	fi
-
-	stack build
-	./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-ledger-node $NODE_ID 0 sockets 0 0 0
-	;;
-
     2)
 	echo "Launching NodeId $1 of cluster size $2"
 

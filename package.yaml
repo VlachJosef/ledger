@@ -3,7 +3,7 @@ version:             0.1.0.0
 github:              "VlachJosef/crypto-ledger"
 license:             BSD3
 author:              "Josef Vlach"
-maintainer:          "evlach.josef@gmail.com"
+maintainer:          "vlach.josef@gmail.com"
 copyright:           "2018 Josef Vlach"
 
 extra-source-files:

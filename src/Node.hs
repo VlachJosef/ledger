@@ -292,9 +292,7 @@ nodeIdFromStateStr = showNodeId . nodeIdFromState
 
 commu :: NodeState -> Conversation -> IO Bool
 commu nodeState conversation = do
-  True <$
-    forkIO
-      (logThread $ "Node " <> myId <> ". Forking new thread!") <* loopMain nodeState
+    True <$ forkIO ((logThread $ "node " <> myId <> ". Forking new thread!") <* loopMain nodeState)
   where
     myId = nodeIdFromStateStr nodeState
     loopMain :: NodeState -> IO ()
