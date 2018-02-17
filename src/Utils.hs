@@ -25,9 +25,7 @@ encodePublicKey :: PublicKey -> ByteString
 encodePublicKey = hash . unPublicKey
 
 hash :: ByteString -> ByteString
-hash =
-    encodeBase58 bitcoinAlphabet .
-    BL.toStrict . SHA.bytestringDigest . SHA.sha256 . BL.fromStrict
+hash = encodeBase58 bitcoinAlphabet .BL.toStrict . SHA.bytestringDigest . SHA.sha256 . BL.fromStrict
 
 now :: IO Timestamp
 now = round <$> (* 1000000) <$> getPOSIXTime

@@ -36,6 +36,8 @@ dependencies:
 - time
 - directory
 - boxes
+- base16-bytestring
+- random
 
 library:
   source-dirs: src
@@ -62,6 +64,16 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - crypto-ledger
+
+  crypto-ledger-keys-generator:
+    main:                Main.hs
+    source-dirs:         keys-generator
+    ghc-options:
+    - -Wall
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
 
 tests:
   crypto-ledger-test:
