@@ -23,9 +23,6 @@ testPk = keysFactory "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 testPk2 :: PublicKey
 testPk2 = keysFactory "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
 
-mkAddress :: PublicKey -> Address
-mkAddress = Address . encodePublicKey
-
 emptyLedger :: Ledger
 emptyLedger = Ledger (Map.empty)
 
@@ -33,7 +30,7 @@ addLedger :: (PublicKey, Int) -> Ledger -> Ledger
 addLedger (pk, amountToAdd) ledgerInitial =
     over
         Ledger
-        (Map.insert (Address $ encodePublicKey pk) amountToAdd)
+        (Map.insert (deriveAddress pk) amountToAdd)
         ledgerInitial
 
 ledgerOf :: [(PublicKey, Int)] -> Ledger
@@ -52,7 +49,7 @@ mkTransaction :: PublicKey -> PublicKey -> Balance -> Transaction
 mkTransaction fromPk toPk bal =
     Transaction dummyTxId testTransfer dummySignature dummyTimestamp
   where
-    testTransfer = Transfer fromPk (mkAddress toPk) bal
+    testTransfer = Transfer fromPk (deriveAddress toPk) bal
 
 emptyBlock :: Block
 emptyBlock = mkBlock []

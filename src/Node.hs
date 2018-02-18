@@ -15,11 +15,12 @@ import Data.Functor
 import Block
 import Control.Concurrent
 import Control.Exception
-import Crypto.Sign.Ed25519 (Signature)
+import Crypto.Sign.Ed25519 (Signature, PublicKey(..))
 import Data.Binary
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Conversion as DBC
+import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Map.Strict as Map
 import Data.List as List
 import Data.List.NonEmpty( NonEmpty( (:|) ), (<|) )
@@ -29,6 +30,7 @@ import Exchange
 import Ledger
 import NodeCommandLine
 import Serokell.Communication.IPC
+import System.Directory (doesFileExist)
 import Utils
 import Transaction
 import Text.PrettyPrint.Boxes as Boxes (render, vcat, hsep, left, text)
@@ -40,11 +42,11 @@ calculateNeighbours nodeConfig =
     let nId = (unNodeId . nodeId) nodeConfig
     in NodeId <$> filter (\a -> a /= nId) [0 .. nodeCount nodeConfig]
 
-initialNodeState :: NodeConfig -> IO NodeState
-initialNodeState nodeConfig = do
-    emptyBlockChain <- newMVar $ genesisBlock :| []
+initialNodeState :: NodeConfig -> [(Address, Int)] -> IO NodeState
+initialNodeState nodeConfig initialDistribution = do
+    emptyBlockChain <- newMVar $ (genesisBlock initialDistribution) :| []
     emptyTransactionPool <- newMVar []
-    ledger <- newMVar (Ledger genesisLedger)
+    ledger <- newMVar (Ledger (Map.fromList initialDistribution))
     chan <- newChan
     pure $
         NodeState
@@ -178,8 +180,8 @@ createTransaction :: Signature -> TransactionId
 createTransaction = TransactionId . encodeSignature
 
 handleClientExchange :: NodeState
-                         -> ClientExchange
-                         -> IO ClientExchangeResponse
+                     -> ClientExchange
+                     -> IO ClientExchangeResponse
 handleClientExchange nodeState =
   \case
     MakeTransfer transfer signature ->
@@ -204,30 +206,9 @@ handleClientExchange nodeState =
       let wasAdded = transactionIdInBlockchain txId blocks
       pure $ QueryResp wasAdded
 
-    Register address -> do
-      ledger <- readMVar $ nodeLedger nodeState
-      txs <- readMVar $ transactionPool nodeState
-      timestamp <- now
-      let maybeTx = isClientRegistered address ledger txs timestamp
-      case maybeTx of
-        Just tx -> do
-          _ <- handleNodeExchange nodeState (AddTransaction tx)
-          pure $ StringResp $ "Registration successful: " <> show address
-        Nothing -> pure $ StringResp $ "Address " <> show address <> " already registered."
-
     FetchStatus -> do
       nodeInfo <- nodeStatus nodeState
       pure $ StatusInfo nodeInfo
-
-isClientRegistered :: Address -> Ledger -> [Transaction] -> Timestamp -> Maybe Transaction
-isClientRegistered address (Ledger ledger) txs timestamp =
-   if Map.member address ledger || any (\tx -> (to . transfer) tx == address) txs
-     then Nothing
-     else let genesisPk = (from . fst) genesisTransfer
-              transfer = Transfer genesisPk address 1000
-              signature = signTransfer (snd nodeKeyPair) transfer
-              transactionId = createTransaction signature
-              in Just $ Transaction transactionId transfer signature timestamp
 
 broadcastToExchange :: Broadcast -> NodeExchange
 broadcastToExchange = \case
@@ -260,7 +241,7 @@ neighbourHandler nodeState broadcastChannel nodeId cc @ Conversation {..} = do
     loop
 
 encodeNodeExchange :: NodeExchange -> ByteString
-encodeNodeExchange = BL.toStrict . encode . NodeExchange
+encodeNodeExchange = BSL.toStrict . encode . NodeExchange
 
 connectToNeighbour :: NodeState -> Chan Broadcast -> NodeId -> IO ()
 connectToNeighbour nodeState broadcastChan nodeId =
@@ -310,18 +291,40 @@ commu nodeState conversation = do
                     ClientExchange clientNodeExchange ->
                        encode <$> handleClientExchange ns clientNodeExchange
 
-            send conversation (BL.toStrict exchangeResponse)
-            nextStep (BS.unpack input) loop
+            send conversation (BSL.toStrict exchangeResponse)
+            nextStep (BSC.unpack input) loop
 
 startMinerThread :: NodeState -> IO ()
 startMinerThread = void . forkIO . mineblock
 
+parseAddressAndAmount :: BSC.ByteString -> Maybe (Address, Int)
+parseAddressAndAmount bs = case BSC.words bs of
+  pk : amountAsStr : [] ->
+    case DBC.fromByteString amountAsStr of
+      Just n -> Just (Address pk, n)
+      Nothing -> Nothing
+  _ -> Nothing
+
+readDistributionFile :: NodeConfig -> IO (Maybe [(Address, Int)])
+readDistributionFile nodeConfig = do
+    let dFile = distributionFile nodeConfig
+    fileExists <- doesFileExist dFile
+    if fileExists
+        then do
+            keysBS <- BSC.readFile dFile
+            pure $ sequence $ parseAddressAndAmount <$> BSC.lines keysBS
+        else pure Nothing
+
 establishClusterConnection :: NodeConfig -> IO ()
 establishClusterConnection nodeConfig = do
-    nodeState <- initialNodeState nodeConfig
-    startMinerThread nodeState
-    _ <- connectToNeighbours nodeState
-    listenForClientConnection nodeState
+    dFile <- readDistributionFile nodeConfig
+    case dFile of
+      Just initialDistribution -> do
+        nodeState <- initialNodeState nodeConfig initialDistribution
+        startMinerThread nodeState
+        _ <- connectToNeighbours nodeState
+        listenForClientConnection nodeState
+      Nothing -> logThread "Error when reading distribution file."
 
 logMessage :: NodeId -> NodeId -> String -> IO ()
 logMessage nodeId neighbourId msg =

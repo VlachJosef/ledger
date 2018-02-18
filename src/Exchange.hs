@@ -34,7 +34,6 @@ data ClientExchange
     | AskBalance Address
     | Query TransactionId
     | FetchStatus
-    | Register Address
     deriving (G.Generic)
 
 instance Show ClientExchange where
@@ -42,7 +41,6 @@ instance Show ClientExchange where
     show (AskBalance address)  = "AskBalance address: " <> show address
     show (Query txId)          = "Query txId: " <> show txId
     show FetchStatus           = "FetchStatus"
-    show (Register address)    = "Register address: " <> show address
 
 instance Binary ClientExchange
 

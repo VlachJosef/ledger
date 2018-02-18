@@ -23,7 +23,7 @@ case "$#" in
 	fi
 
 	stack build
-	./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-ledger-node $NODE_ID $NODE_COUNT sockets 0 0 0
+	./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-ledger-node $NODE_ID $NODE_COUNT sockets 0 0 0 Distribution.keys
 	;;
     *)
 	help

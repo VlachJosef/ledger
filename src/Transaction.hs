@@ -8,7 +8,7 @@ import Address
 import Crypto.Sign.Ed25519
 import Data.Binary
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BL
 import Data.Semigroup
 import qualified GHC.Generics as G
@@ -31,7 +31,7 @@ newtype TransactionId = TransactionId
     } deriving (Eq, G.Generic)
 
 instance Show TransactionId where
-    show = BS.unpack . unTransactionId
+    show = BSC.unpack . unTransactionId
 
 data Transaction = Transaction
     { transactionId :: TransactionId

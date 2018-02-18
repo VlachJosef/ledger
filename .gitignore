@@ -3,3 +3,5 @@ crypto-ledger.cabal
 *~
 keys/
 sockets/
+/Distribution.keys
+/.ghci

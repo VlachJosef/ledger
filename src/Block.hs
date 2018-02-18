@@ -22,33 +22,22 @@ instance Binary Block
 
 type BlockChain = NEL.NonEmpty Block
 
-genesisBlock :: Block
-genesisBlock = Block 1 [genesisTransaction] 0
+genesisBlock :: [(Address, Int)] ->  Block
+genesisBlock xs = Block 1 (genesisTransactions xs) 0
 
-genesisTransaction :: Transaction
-genesisTransaction =
-    let (tran, sig) = genesisTransfer
-        txId        = TransactionId $ encodeSignature sig
-    in Transaction txId tran sig 0
+genesisTransaction :: (Address, Int) -> Transaction
+genesisTransaction (address, amount) =
+  let (pk, sk) = nodeKeyPair
+      tran     = Transfer pk address amount
+      sig      = signTransfer sk tran
+      txId     = TransactionId $ encodeSignature sig
+  in Transaction txId tran sig 0
+
+genesisTransactions :: [(Address, Int)] -> [Transaction]
+genesisTransactions xs = genesisTransaction <$> xs
 
 nodeKeyPair :: (PublicKey, SecretKey)
 nodeKeyPair =
     case createKeypairFromSeed_ "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" of
         Nothing       -> error "seed has incorrect length"
         Just (pk, sk) -> (pk, sk)
-
-genesisValue :: Int
-genesisValue = 100 * 1000
-
-genesisTransfer :: (Transfer, Signature)
-genesisTransfer =
-    let (pk, sk) = nodeKeyPair
-        tran     = Transfer pk (deriveAddress pk) genesisValue
-        sig      = signTransfer sk tran
-    in (tran, sig)
-
-genesisLedger :: Map.Map Address Int
-genesisLedger =
-    let pk      = fst nodeKeyPair
-        address = deriveAddress pk
-    in Map.insert address genesisValue Map.empty

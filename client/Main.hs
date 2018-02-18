@@ -1,5 +1,6 @@
 module Main where
 
+import Address
 import Client
 import ClientCommandLine
 import Crypto.Sign.Ed25519
@@ -17,35 +18,20 @@ main = handleClient =<< execParser parseArguments
 
 handleClient :: ClientConfig -> IO ()
 handleClient clientConfig = do
-    sk <-
-        case keyPairDir clientConfig of
-            Just filePath -> do
-                maybeSk <- readSecretKey filePath
-                case maybeSk of
-                    Nothing -> error $ "No secret key on found in " <> filePath
-                    Just sk -> pure sk
-            Nothing -> do
-                (_, sk) <- createKeypair
-                let keyName = hash sk
-                logThread $ "Writing key " <> keyName
-                writeSecretKey ("keys/" <> keyName) sk
-                pure sk
+    sk <- readSecretKey (keyPairDir clientConfig)
     connectToNode clientConfig sk
 
 hash :: SecretKey -> String
 hash = SHA.showDigest . SHA.sha256 . BL.fromStrict . unSecretKey
 
-readSecretKey :: FilePath -> IO (Maybe SecretKey)
+readSecretKey :: FilePath -> IO SecretKey
 readSecretKey filePath = do
     fileExists <- doesFileExist filePath
     if fileExists
         then do
             keysBS <- BS.readFile filePath
-            pure $ Just (SecretKey keysBS)
-        else pure Nothing
-
-writeSecretKey :: FilePath -> SecretKey -> IO ()
-writeSecretKey filePath sk = BS.writeFile filePath (unSecretKey sk)
+            pure $ SecretKey keysBS
+        else error $ "No secret key on found in " <> filePath
 
 connectToNode :: ClientConfig -> SecretKey -> IO ()
 connectToNode clientConfig sk =
@@ -55,9 +41,12 @@ connectToNode clientConfig sk =
         (connectNode clientConfig sk)
 
 connectNode :: ClientConfig -> SecretKey -> Conversation -> IO ()
-connectNode clientConfig sk conversation = do
-    let nc = NodeConversation conversation
-    logThread $ "Client id " <> (showNodeId . clientId) clientConfig <> ". Connected to node id " <> (showNodeId . nodeId) clientConfig
-    registerResp <- register sk nc
-    logThread $ "Registration status: " <> (show registerResp)
+connectNode clientConfig sk conversation = let
+  nc = NodeConversation conversation
+  cId = (showNodeId . clientId) clientConfig
+  nId = (showNodeId . nodeId) clientConfig
+  address = (show . deriveAddress . toPublicKey) sk
+  in do
+    logThread $ "Clienk id " <> cId <> ", address: " <> address
+    logThread $ "Client id " <> cId <> ". Connected to node id " <> nId
     connectClient nc clientConfig sk

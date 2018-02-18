@@ -1,5 +1,6 @@
 module Test.Node where
 
+import Address
 import Block
 import Control.Concurrent
 import Crypto.Sign.Ed25519
@@ -11,7 +12,7 @@ import Test.Utils
 import qualified Data.ByteString.Base16 as Base16
 
 testNodeConfig :: NodeConfig
-testNodeConfig = NodeConfig (NodeId 1) 5 "./sockets" 1 1 1
+testNodeConfig = NodeConfig (NodeId 1) 5 "./sockets" 1 1 1 ""
 
 main :: IO ()
 main =
@@ -21,7 +22,7 @@ main =
                 it "should return balance from Ledger" $
                     let tx = mkTransaction testPk testPk2 100
                         block = (mkBlock [tx]) {index = 2}
-                    in do nodeState <- initialNodeState testNodeConfig
+                    in do nodeState <- initialNodeState testNodeConfig [(deriveAddress testPk, 100000)]
                           mBlock <- addBlock block nodeState
                           mBlock `shouldBe` Just block
                           ledger <- readMVar $ nodeLedger nodeState
@@ -31,7 +32,7 @@ main =
                         tx2 = mkTransaction testPk testPk2 50
                         firstBlock = (mkBlock [tx]) {index = 2, timestamp = 2}
                         secondBlock = (mkBlock [tx2]) {index = 2, timestamp = 1}
-                    in do nodeState <- initialNodeState testNodeConfig
+                    in do nodeState <- initialNodeState testNodeConfig [(deriveAddress testPk, 100000)]
                           mBlock <- addBlock firstBlock nodeState
                           mBlock `shouldBe` Just firstBlock
                           ledger <- readMVar $ nodeLedger nodeState

@@ -8,7 +8,7 @@ module Address
 import Crypto.Sign.Ed25519
 import Data.Binary
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Char8 as BSC
 import Utils
 
 newtype Address = Address
@@ -16,7 +16,7 @@ newtype Address = Address
     } deriving (Read, Eq, Ord, Binary)
 
 instance Show Address where
-    show = BS.unpack . rawAddress
+    show = BSC.unpack . rawAddress
 
 deriveAddress :: PublicKey -> Address
 deriveAddress = Address . encodePublicKey

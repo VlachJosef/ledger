@@ -1,5 +1,6 @@
 module Test.Node.Internal where
 
+import Address
 import Ledger
 import Node.Internal
 import Test.Hspec
@@ -33,8 +34,8 @@ main =
                         ledgerExpected = ledgerOf [(testPk, 90), (testPk2, 110)]
                         errorExpected =
                             InsufficientBalance
-                                (mkAddress testPk2)
-                                (mkAddress testPk)
+                                (deriveAddress testPk2)
+                                (deriveAddress testPk)
                                 120
                     in do addBlockToLedger blockInitial ledgerInitial `shouldBe`
                               BlockToLedger
@@ -53,7 +54,7 @@ main =
                 it
                     "should return AddressNotFound if address from transaction is not in a ledger" $
                     let tx = mkTransaction testPk testPk 10
-                        address = mkAddress testPk
+                        address = deriveAddress testPk
                     in do applyTransaction tx ([], emptyLedger, []) `shouldBe`
                               ([AddressNotFound address], emptyLedger, [])
                 it "should add transaction into ledger" $
@@ -74,19 +75,19 @@ main =
                         ledgerInitial = ledgerOf [(testPk, 100)]
                         errorExpected =
                             InsufficientBalance
-                                (mkAddress testPk)
-                                (mkAddress testPk2)
+                                (deriveAddress testPk)
+                                (deriveAddress testPk2)
                                 101
                     in do applyTransaction tx ([], ledgerInitial, []) `shouldBe`
                               ([errorExpected], ledgerInitial, [])
             describe "balance" $ do
                 it "should return balance from Ledger" $
                     let ledger = ledgerOf [(testPk, 123)]
-                        address = mkAddress testPk
+                        address = deriveAddress testPk
                     in do balance ledger address `shouldBe` Right 123
                 it
                     "should return AddressNotFound is address cannot be found in Ledger" $
-                    let address = mkAddress testPk
+                    let address = deriveAddress testPk
                     in do balance emptyLedger address `shouldBe`
                               Left (AddressNotFound address)
 

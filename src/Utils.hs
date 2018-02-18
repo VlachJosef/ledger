@@ -12,8 +12,11 @@ import Data.Semigroup
 import Crypto.Sign.Ed25519
 import Data.ByteString (ByteString)
 import Data.ByteString.Base58
+import qualified Data.ByteString.Base16 as Base16
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Digest.Pure.SHA as SHA
+import qualified Data.ByteString.Conversion as DBC
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Serokell.Communication.IPC (NodeId, unNodeId)
 import Time
@@ -22,10 +25,10 @@ encodeSignature :: Signature -> ByteString
 encodeSignature = hash . unSignature
 
 encodePublicKey :: PublicKey -> ByteString
-encodePublicKey = hash . unPublicKey
+encodePublicKey = Base16.encode . unPublicKey
 
 hash :: ByteString -> ByteString
-hash = encodeBase58 bitcoinAlphabet .BL.toStrict . SHA.bytestringDigest . SHA.sha256 . BL.fromStrict
+hash = encodeBase58 bitcoinAlphabet . BL.toStrict . SHA.bytestringDigest . SHA.sha256 . BL.fromStrict
 
 now :: IO Timestamp
 now = round <$> (* 1000000) <$> getPOSIXTime

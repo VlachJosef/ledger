@@ -13,11 +13,11 @@ data ClientConfig = ClientConfig
     { clientId   :: NodeId
     , nodeId     :: NodeId
     , socketDir  :: Maybe FilePath
-    , keyPairDir :: Maybe FilePath
+    , keyPairDir :: FilePath
     } deriving (Show)
 
 defaultClientArguments :: ClientConfig
-defaultClientArguments = ClientConfig (NodeId 50) (NodeId 0) Nothing Nothing
+defaultClientArguments = ClientConfig (NodeId 50) (NodeId 0) Nothing ""
 
 clientArgumentsParser :: Parser ClientConfig
 clientArgumentsParser =
@@ -50,9 +50,8 @@ socketsParser =
     long "sockets" <> short 's' <> metavar "SOCKETS_DIR" <>
     help "Path to the directory with Unix sockets."
 
-keysParser :: Parser (Maybe FilePath)
+keysParser :: Parser FilePath
 keysParser =
-    optional $
     strOption $
     long "keys" <> short 'k' <> metavar "KEYS_DIR" <>
     help

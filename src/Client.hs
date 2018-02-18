@@ -5,7 +5,6 @@
 
 module Client
     ( connectClient
-    , register
     , NodeConversation(..)
     ) where
 
@@ -15,7 +14,7 @@ import Control.Concurrent
 import Crypto.Sign.Ed25519
 import Data.Binary
 import qualified Data.ByteString as S
-import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Conversion as DBC
 import Data.ByteString.Conversion.To
 import qualified Data.ByteString.Lazy as BL
@@ -43,18 +42,15 @@ newtype NodeConversation = NodeConversation
     { unNodeConversation :: Conversation
     }
 
-convertToInt :: S.ByteString -> Maybe Int
-convertToInt = DBC.fromByteString
-
 toPossibleCmd :: S.ByteString -> PossibleCmd
 toPossibleCmd bs =
-    case BS.words bs of
+    case BSC.words bs of
         ["status"]           ->  Cmd StatusCmd
         ["BALANCE", address] -> (Cmd . BalanceCmd . Address) address
         ["QUERY", txId]      -> (Cmd . QueryCmd . TransactionId) txId
         ["SUBMIT", address, amount] ->
-            case convertToInt amount of
-                Nothing -> ErrorCmd ("Amount must be a number, got: " <> (BS.unpack amount))
+            case DBC.fromByteString amount of
+                Nothing -> ErrorCmd ("Amount must be a number, got: " <> (BSC.unpack amount))
                 Just n  -> Cmd $ TransferCmd (Address address) n
         _ -> UnknownCmd
 
@@ -69,11 +65,11 @@ clientCmdToNodeExchange sk clientCmd =
                 transferSignature = dsign sk (encodeTransfer transfer)
             in MakeTransfer transfer transferSignature
 
-register :: SecretKey -> NodeConversation -> IO ClientExchangeResponse
-register sk conversation =
-    let address = deriveAddress (toPublicKey sk)
-        exchange = Register address
-    in do sendExchange conversation exchange
+-- register :: SecretKey -> NodeConversation -> IO ClientExchangeResponse
+-- register sk conversation =
+--     let address = deriveAddress (toPublicKey sk)
+--         exchange = Register address
+--     in do sendExchange conversation exchange
 
 sendExchange :: NodeConversation -> ClientExchange -> IO ClientExchangeResponse
 sendExchange (NodeConversation Conversation {..}) exchange =
@@ -100,7 +96,7 @@ connect clientId sk nc (Conversation {..}) = do
                 sendResponse $ showExchangeResponse exchangeResp
             ErrorCmd err -> sendResponse err
             UnknownCmd   -> sendResponse "Unknown command"
-        nextStep (BS.unpack input) loop
+        nextStep (BSC.unpack input) loop
 
 showExchangeResponse :: ClientExchangeResponse -> String
 showExchangeResponse =

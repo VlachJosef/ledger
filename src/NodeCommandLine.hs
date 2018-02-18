@@ -15,6 +15,7 @@ data NodeConfig = NodeConfig
     , disconnectTimeout :: Int
     , stabilityTimeout :: Int
     , resyncTimeout :: Int
+    , distributionFile :: FilePath
     } deriving (Show)
 
 nodeConfigParser :: Parser NodeConfig
@@ -36,11 +37,13 @@ nodeConfigParser =
         (metavar "STABILITY_TIMEOUT" <> help "Transaction stability timeout") <*>
     argument
         auto
-        (metavar "RESYNC_TIMEOUT" <> help "Timeout for ledger synchronization")
+        (metavar "RESYNC_TIMEOUT" <> help "Timeout for ledger synchronization") <*>
+    strArgument
+        (metavar "DISTRIBUTION_FILE" <> help "Distribution file")
 
 parseArguments :: ParserInfo NodeConfig
 parseArguments =
     (info
          (nodeConfigParser <**> helper)
-         (fullDesc <> progDesc "Print a greeting for TARGET" <>
-          header "hello - a test for optparse-applicative"))
+         (fullDesc <> progDesc "Distributed ledger node" <>
+          header "Distributed ledger node"))
