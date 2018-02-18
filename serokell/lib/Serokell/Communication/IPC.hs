@@ -18,7 +18,6 @@ import Control.Exception.Safe (bracket, bracket_)
 import Control.Monad (when)
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)
-import Data.Semigroup
 import System.Environment (lookupEnv)
 import System.FilePath ((<.>), (</>))
 import System.IO.Unsafe (unsafePerformIO)
@@ -83,12 +82,6 @@ sendSock conn = NetByte.sendAll conn
 recvSock :: Net.Socket -> Recv
 recvSock conn = NetByte.recv conn 4096
 
--- acceptServerSock :: Net.Socket -> IO (Net.Socket, Conversation)
--- acceptServerSock socket = do
---     _ <- putStrLn "BEFORE ACCEPT"
---     (conn, _) <- Net.accept socket
---     _ <- putStrLn "AFTER ACCEPT"
---     return $ (conn, Conversation (sendSock conn) (recvSock conn))
 acceptServerSock :: Net.Socket -> IO Conversation
 acceptServerSock socket = do
     (conn, _) <- Net.accept socket
@@ -98,29 +91,6 @@ acceptServerSock socket = do
 initializeSocket :: IO Net.Socket -> (Net.Socket -> IO ()) -> IO ()
 initializeSocket before = bracket before Net.close
 
--- -- | Create new UNIX socket for node 'NodeId', listen to it and use supplied
--- -- handler to process incoming connections.
--- listenUnixSocket :: SocketDirectory
---                  -> NodeId
---                  -> (Conversation -> IO Bool)
---                  -> IO ()
--- listenUnixSocket socketDirectory (NodeId nodeId) handler =
---     initializeSocket allocator acceptLoop
---   where
---     acceptLoop :: Net.Socket -> IO ()
---     acceptLoop socket = do
---         (conn, conversation) <- acceptServerSock socket
---         _ <- putStrLn "BEFORE HANDLER"
---         r <- handler conversation
---         _ <- putStrLn "AFTER HANDLER"
---         flip when (acceptLoop socket) r
---     allocator :: IO Net.Socket
---     allocator = do
---         socket <- Net.socket Net.AF_UNIX Net.Stream Net.defaultProtocol
---         let socketPath = socketDirectory </> show nodeId <.> "sock"
---         Net.bind socket $ Net.SockAddrUnix socketPath
---         Net.listen socket 5
---         return socket
 -- | Create new UNIX socket for node 'NodeId', listen to it and use supplied
 -- handler to process incoming connections.
 listenUnixSocket :: SocketDirectory
@@ -130,13 +100,8 @@ listenUnixSocket :: SocketDirectory
 listenUnixSocket socketDirectory (NodeId nodeId) handler =
     initializeSocket allocator acceptLoop
   where
-    acceptLoop socket = do
-        _ <- putStrLn "BEFORE ACCEPT"
-        conversation <- acceptServerSock socket
-        _ <- putStrLn "BEFORE HANDLER"
-        r <- handler conversation
-        _ <- putStrLn "AFTER HANDLER"
-        flip when (acceptLoop socket) r
+    acceptLoop socket =
+        acceptServerSock socket >>= handler >>= flip when (acceptLoop socket)
     allocator :: IO Net.Socket
     allocator = do
         socket <- Net.socket Net.AF_UNIX Net.Stream Net.defaultProtocol
