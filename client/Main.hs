@@ -3,6 +3,7 @@ module Main where
 import Address
 import Client
 import ClientCommandLine
+import Control.Logging
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -46,7 +47,7 @@ connectNode clientConfig sk conversation = let
   cId = (showNodeId . clientId) clientConfig
   nId = (showNodeId . nodeId) clientConfig
   address = (show . deriveAddress . toPublicKey) sk
-  in do
-    logThread $ "Clienk id " <> cId <> ", address: " <> address
+  in withFileLogging ("log/client-" <> cId <> ".log") $ do
+    logThread $ "Client id " <> cId <> ", address: " <> address
     logThread $ "Client id " <> cId <> ". Connected to node id " <> nId
     connectClient nc clientConfig sk

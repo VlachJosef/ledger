@@ -5,3 +5,4 @@ keys/
 sockets/
 /Distribution.keys
 /.ghci
+*.log

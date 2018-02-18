@@ -38,6 +38,8 @@ dependencies:
 - boxes
 - base16-bytestring
 - random
+- logging
+- text
 
 library:
   source-dirs: src

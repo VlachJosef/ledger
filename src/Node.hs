@@ -15,6 +15,7 @@ import Data.Functor
 import Block
 import Control.Concurrent
 import Control.Exception
+import Control.Logging
 import Crypto.Sign.Ed25519 (Signature, PublicKey(..))
 import Data.Binary
 import Data.ByteString (ByteString)
@@ -316,7 +317,9 @@ readDistributionFile nodeConfig = do
         else pure Nothing
 
 establishClusterConnection :: NodeConfig -> IO ()
-establishClusterConnection nodeConfig = do
+establishClusterConnection nodeConfig = let
+  nId = (showNodeId . nodeId) nodeConfig
+  in withFileLogging ("log/node-" <> nId <> ".log" ) $ do
     dFile <- readDistributionFile nodeConfig
     case dFile of
       Just initialDistribution -> do

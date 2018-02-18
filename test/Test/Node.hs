@@ -9,6 +9,7 @@ import NodeCommandLine
 import Serokell.Communication.IPC
 import Test.Hspec
 import Test.Utils
+import Control.Logging
 import qualified Data.ByteString.Base16 as Base16
 
 testNodeConfig :: NodeConfig
@@ -22,7 +23,8 @@ main =
                 it "should return balance from Ledger" $
                     let tx = mkTransaction testPk testPk2 100
                         block = (mkBlock [tx]) {index = 2}
-                    in do nodeState <- initialNodeState testNodeConfig [(deriveAddress testPk, 100000)]
+                    in withStdoutLogging $ do
+                          nodeState <- initialNodeState testNodeConfig [(deriveAddress testPk, 100000)]
                           mBlock <- addBlock block nodeState
                           mBlock `shouldBe` Just block
                           ledger <- readMVar $ nodeLedger nodeState
