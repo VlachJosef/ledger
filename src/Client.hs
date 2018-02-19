@@ -26,7 +26,8 @@ import Utils
 
 data PossibleCmd
     = Cmd ClientCmd
-    | UnknownCmd
+    | EmptyCmd
+    | UnknownCmd [BSC.ByteString]
     | ErrorCmd String
     deriving (Show)
 
@@ -52,7 +53,8 @@ toPossibleCmd bs =
             case DBC.fromByteString amount of
                 Nothing -> ErrorCmd ("Amount must be a number, got: " <> (BSC.unpack amount))
                 Just n  -> Cmd $ TransferCmd (Address address) n
-        _ -> UnknownCmd
+        []   -> EmptyCmd
+        unknown -> UnknownCmd unknown
 
 clientCmdToNodeExchange :: SecretKey -> ClientCmd -> ClientExchange
 clientCmdToNodeExchange sk clientCmd =
@@ -64,12 +66,6 @@ clientCmdToNodeExchange sk clientCmd =
             let transfer  = Transfer (toPublicKey sk) address amount
                 transferSignature = dsign sk (encodeTransfer transfer)
             in MakeTransfer transfer transferSignature
-
--- register :: SecretKey -> NodeConversation -> IO ClientExchangeResponse
--- register sk conversation =
---     let address = deriveAddress (toPublicKey sk)
---         exchange = Register address
---     in do sendExchange conversation exchange
 
 sendExchange :: NodeConversation -> ClientExchange -> IO ClientExchangeResponse
 sendExchange (NodeConversation Conversation {..}) exchange =
@@ -93,29 +89,31 @@ connect clientId sk nc (Conversation {..}) = do
         case possibleCmd of
             Cmd clientCmd -> do
                 exchangeResp <- (sendNodeExchange . ccToNodeExchange) clientCmd
-                sendResponse $ showExchangeResponse exchangeResp
+                sendResponse $ showExchangeResponse (deriveAddress $ toPublicKey sk) exchangeResp
             ErrorCmd err -> sendResponse err
-            UnknownCmd   -> sendResponse "Unknown command"
+            UnknownCmd unknown -> sendResponse $ "Unknown command: " <> show unknown
+            EmptyCmd -> pure ()
         nextStep (BSC.unpack input) loop
 
-showExchangeResponse :: ClientExchangeResponse -> String
-showExchangeResponse =
+showExchangeResponse :: Address -> ClientExchangeResponse -> String
+showExchangeResponse address =
     \case
         StringResp message              -> message
         SubmitResp (Just transactionId) -> show transactionId
         SubmitResp Nothing              -> "Transaction has not been accepted"
         BalanceResp balance             -> show balance
         QueryResp wasAdded              -> show wasAdded
-        StatusInfo nodeInfo             -> prettyPrintStatusInfo nodeInfo
+        StatusInfo nodeInfo             -> prettyPrintStatusInfo address nodeInfo
 
-prettyPrintStatusInfo :: NodeInfo -> String
-prettyPrintStatusInfo NodeInfo {..} =
+prettyPrintStatusInfo :: Address ->NodeInfo -> String
+prettyPrintStatusInfo address NodeInfo {..} =
          "NodeId         : " <> show nId
     <> "\nTxPoolCount    : " <> show txPoolCount
     <> "\nNeighbour nodes: " <> show neighbourNodes
     <> "\nBlock count    : " <> show blockCount
     <> "\nBlocks Info    : " <> foldl (<>) "\n" blocksInfo
-    <> "Ledger:\n" <> ledger
+    <> "Address:\n"  <> show address
+    <> "\nLedger:\n" <> ledger
 
 response :: String -> S.ByteString
 response str = BL.toStrict (toByteString (str <> "\n"))

@@ -41,7 +41,7 @@ import Node.Data
 calculateNeighbours :: NodeConfig -> [NodeId]
 calculateNeighbours nodeConfig =
     let nId = (unNodeId . nodeId) nodeConfig
-    in NodeId <$> filter (\a -> a /= nId) [0 .. nodeCount nodeConfig]
+    in NodeId <$> filter (\a -> a /= nId) [0 .. (nodeCount nodeConfig - 1)]
 
 initialNodeState :: NodeConfig -> [(Address, Int)] -> IO NodeState
 initialNodeState nodeConfig initialDistribution = do
