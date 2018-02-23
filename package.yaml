@@ -40,6 +40,7 @@ dependencies:
 - random
 - logging
 - text
+- unix
 
 library:
   source-dirs: src
@@ -76,6 +77,19 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+
+  crypto-launcher:
+    main:                Main.hs
+    source-dirs:         launcher
+    ghc-options:
+    - -Wall
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+#    - process
+    - typed-process
+    - mtl
 
 tests:
   crypto-ledger-test:

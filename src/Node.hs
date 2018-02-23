@@ -14,7 +14,7 @@ import Address
 import Data.Functor
 import Block
 import Control.Concurrent
-import Control.Exception
+import Control.Exception (try, IOException)
 import Control.Logging
 import Crypto.Sign.Ed25519 (Signature, PublicKey(..))
 import Data.Binary
@@ -31,12 +31,14 @@ import Exchange
 import Ledger
 import NodeCommandLine
 import Serokell.Communication.IPC
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, removeFile)
 import Utils
 import Transaction
 import Text.PrettyPrint.Boxes as Boxes (render, vcat, hsep, left, text)
 import Time
 import Node.Data
+import System.Posix.Signals
+import System.Exit
 
 calculateNeighbours :: NodeConfig -> [NodeId]
 calculateNeighbours nodeConfig =
@@ -321,6 +323,8 @@ establishClusterConnection nodeConfig = let
   nId = (showNodeId . nodeId) nodeConfig
   in withFileLogging ("log/node-" <> nId <> ".log" ) $ do
     dFile <- readDistributionFile nodeConfig
+    void $ installHandler sigTERM (terminationHandler nodeConfig sigTERM) Nothing
+    void $ installHandler sigINT  (terminationHandler nodeConfig sigINT)  Nothing
     case dFile of
       Just initialDistribution -> do
         nodeState <- initialNodeState nodeConfig initialDistribution
@@ -350,3 +354,16 @@ connectToNeighbours nodeState =
 listenForClientConnection :: NodeState -> IO ()
 listenForClientConnection nodeState = do
     listenUnixSocket "sockets" (nodeIdFromState nodeState) (commu nodeState)
+
+terminationHandler :: NodeConfig -> Signal ->  Handler
+terminationHandler nodeConfig signal = CatchOnce $ do
+    logThread $ "Caught " <> show signal <> " signal."
+    let socketFile = "sockets/" <> ((show . unNodeId . nodeId) nodeConfig) <> ".sock"
+    fileExists <- doesFileExist socketFile
+    if fileExists
+      then do
+        logThread $ "Removing socket file: " <> socketFile
+        removeFile socketFile
+      else logThread $ "File: " <> socketFile <> " not found."
+    flushLog
+    raiseSignal signal
