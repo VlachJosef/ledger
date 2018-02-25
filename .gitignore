@@ -6,3 +6,7 @@ sockets/
 /Distribution.keys
 /.ghci
 *.log
+.cabal-sandbox/
+dist/
+/cabal.sandbox.config
+/.history

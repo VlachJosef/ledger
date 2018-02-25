@@ -41,6 +41,8 @@ dependencies:
 - logging
 - text
 - unix
+- filepath
+- parsec
 
 library:
   source-dirs: src
@@ -90,6 +92,18 @@ executables:
 #    - process
     - typed-process
     - mtl
+    - haskeline
+    - either
+
+  crypto-nc:
+    main:                Main.hs
+    source-dirs:         nc
+    ghc-options:
+    - -Wall
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
 
 tests:
   crypto-ledger-test:

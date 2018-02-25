@@ -38,7 +38,6 @@ import Text.PrettyPrint.Boxes as Boxes (render, vcat, hsep, left, text)
 import Time
 import Node.Data
 import System.Posix.Signals
-import System.Exit
 
 calculateNeighbours :: NodeConfig -> [NodeId]
 calculateNeighbours nodeConfig =

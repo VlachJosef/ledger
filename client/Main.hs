@@ -8,19 +8,37 @@ import Crypto.Sign.Ed25519
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Digest.Pure.SHA as SHA
+import Data.Functor
 import Data.Monoid
 import Options.Applicative
 import Serokell.Communication.IPC
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, removeFile)
+import System.Posix.Signals
 import Utils
 
 main :: IO ()
 main = handleClient =<< execParser parseArguments
 
+terminationHandler :: ClientConfig -> Signal ->  Handler
+terminationHandler clientConfig signal = CatchOnce $ do
+    logThread $ "Caught " <> show signal <> " signal."
+    let socketFile = "sockets/" <> ((show . unNodeId . clientId) clientConfig) <> ".sock"
+    fileExists <- doesFileExist socketFile
+    if fileExists
+      then do
+        logThread $ "Removing socket file: " <> socketFile
+        removeFile socketFile
+      else logThread $ "File: " <> socketFile <> " not found."
+    flushLog
+    raiseSignal signal
+
 handleClient :: ClientConfig -> IO ()
 handleClient clientConfig = do
-    sk <- readSecretKey (keyPairDir clientConfig)
-    connectToNode clientConfig sk
+  void $ installHandler sigTERM (terminationHandler clientConfig sigTERM) Nothing
+  void $ installHandler sigINT  (terminationHandler clientConfig sigINT)  Nothing
+
+  sk <- readSecretKey (keyPairDir clientConfig)
+  connectToNode clientConfig sk
 
 hash :: SecretKey -> String
 hash = SHA.showDigest . SHA.sha256 . BL.fromStrict . unSecretKey
