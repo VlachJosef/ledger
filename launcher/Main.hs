@@ -18,6 +18,7 @@ import Serokell.Communication.IPC (NodeId(..))
 import System.IO
 import Data.List
 import System.Console.Haskeline
+import System.Console.Haskeline.History
 import System.Directory
 import Data.Either.Validation
 import Control.Exception
@@ -37,6 +38,8 @@ clientExec  = binDir <> "crypto-ledger-client"
 nodeExec   :: FilePath
 nodeExec    = binDir <> "crypto-ledger-node"
 
+pattern Script    :: String
+pattern Script    = "script"
 pattern Cluster   :: String
 pattern Cluster   = "cluster"
 pattern Launch    :: String
@@ -61,6 +64,7 @@ data ClusterCmd
   | ClusterNodeStop NodeId
   | ClusterTerminate
   | ClusterStatus
+  | ClusterScript
   deriving (Show)
 
 data ClientCmd
@@ -135,6 +139,9 @@ pClusterLaunch = ClusterLaunch <$> (string Cluster *> Parsec.spaces *> pIntPosit
 pClusterStatus :: Parsec.Parsec String () ClusterCmd
 pClusterStatus = ClusterStatus <$ string "status"
 
+pClusterScript :: Parsec.Parsec String () ClusterCmd
+pClusterScript = ClusterScript <$ string "script"
+
 pClusterLaunchNode :: Parsec.Parsec String () ClusterCmd
 pClusterLaunchNode = ClusterNodeLaunch <$ string Launch
 
@@ -146,7 +153,8 @@ pClusterTerminate = ClusterTerminate <$ string Terminate
 
 pClusterCmd :: Parsec.Parsec String () ClusterCmd
 pClusterCmd
-  =   pClusterStatus
+  =   Parsec.try pClusterStatus
+  <|> pClusterScript
   <|> pClusterLaunch
   <|> pClusterLaunchNode
   <|> pClusterNodeStop
@@ -160,6 +168,8 @@ pCmd
 sourceName :: String
 sourceName = "launcher-params"
 
+ciScript    :: CommandInfo
+ciScript     = CommandInfo Script    False
 ciCluster   :: CommandInfo
 ciCluster    = CommandInfo Cluster   True
 ciLaunch    :: CommandInfo
@@ -172,26 +182,62 @@ ciStatus    :: CommandInfo
 ciStatus     = CommandInfo Status    False
 ciAll       :: CommandInfo
 ciAll        = CommandInfo All       True
+ciSubmit    :: CommandInfo
+ciSubmit     = CommandInfo "submit"  True
+ciBalance   :: CommandInfo
+ciBalance    = CommandInfo "balance" True
+ciQuery     :: CommandInfo
+ciQuery      = CommandInfo "query"   True
 
 commands :: [CommandInfo]
-commands = [ciCluster, ciLaunch, ciStop, ciTerminate, ciStatus, ciAll]
+commands = [ciScript, ciCluster, ciLaunch, ciStop, ciTerminate, ciStatus, ciAll]
+
+commandsAfterAll :: [CommandInfo]
+commandsAfterAll = [ciStatus, ciSubmit, ciBalance, ciQuery]
 
 settings :: Settings (StateT RunningEnvironment IO)
 settings = setComplete comp defaultSettings
 
 comp :: (String, String) -> StateT RunningEnvironment IO ([Char], [Completion])
-comp (onLeft, onRight) = let
-  completions = (\CommandInfo{..} -> Completion command command takeParams) <$> filter (\a -> isPrefixOf (reverse onLeft) (command a)) commands
-  in pure ("", completions)
+comp (onLeft, onRight) = do
+  s <- get
+  let
+    rOnLeft :: String
+    rOnLeft = reverse onLeft
+
+    clientNodeIds :: [String]
+    clientNodeIds = (show . nodeId . processData) <$> runningClientProcesses s
+
+    firstOrderCommands :: [CommandInfo]
+    firstOrderCommands = commands ++ ((\a -> (CommandInfo a True)) <$> clientNodeIds)
+
+    clientCommand :: Maybe String
+    clientCommand = find (\a -> take (length a) rOnLeft == a) ((\a -> a <> " ") <$> ("all" : clientNodeIds))
+
+    (commandInfos, prefix) = case clientCommand of
+      Nothing    -> (filter (\a -> isPrefixOf rOnLeft (command a)) firstOrderCommands, "")
+      Just match -> (filter (\a -> isPrefixOf (drop (length match) rOnLeft) (command a)) commandsAfterAll, match)
+
+    in pure (reverse prefix, (\CommandInfo{..} -> Completion command command takeParams) <$> commandInfos)
 
 main :: IO ()
-main = evalStateT (runInputT settings loop) (XXX [] [] Nothing)
+main = evalStateT (runInputT settings loop) (EnvData [] [] Nothing [])
    where
        loop :: InputT (StateT RunningEnvironment IO) ()
        loop = do
-           minput <- getInputLine ">>> "
+           s <- lift $ get
+           let (scriptCommand, rest) = maybe ("", []) id (uncons (script s))
+           lift $ put $ s { script = rest
+                          }
+           let sc = if null scriptCommand
+                    then getInputLine ">>> "
+                    else do
+                          modifyHistory (addHistory scriptCommand)
+                          pure $ Just scriptCommand
+
+           minput <- sc
            case minput of
-               Nothing     -> return ()
+               Nothing     -> pure ()
                Just input  -> do
                  (lift . execCommand . parseCmd) input
                  loop
@@ -213,10 +259,11 @@ instance Show NodeId where
   show (NodeId nId) = show nId
 
 data RunningEnvironment =
-  XXX { runningProcesses :: [RunningProcess]
-      , runningClientProcesses :: [RunningProcess]
-      , stoppedNode :: Maybe ProcessData
-  }
+  EnvData { runningProcesses :: [RunningProcess]
+          , runningClientProcesses :: [RunningProcess]
+          , stoppedNode :: Maybe ProcessData
+          , script :: [String]
+          }
 
 parseCmd :: String -> Cmd
 parseCmd s = if null s
@@ -320,24 +367,26 @@ launchClient :: StateT RunningEnvironment IO ()
 launchClient = do
   --lift $ threadDelay $ 1 * 1000 * 1000
   s <- get
-  cd <- lift $ getCurrentDirectory
-  allFiles <- lift $ listDirectory (cd </> keysDir)
-  let keys      = filter (\a -> length a == 128) allFiles
-  let processes = runningProcesses s
-  let psData    = prepareNodesClient (length processes) ((\e -> keysDir </> e) <$> keys)
-  runningProcesses <- lift $ runNodes psData
-  lift $ void $ sequence $ putStr . show  <$> runningProcesses
-  put $ s { runningClientProcesses = runningProcesses }
+  if null (runningClientProcesses s) then do
+    cd <- lift $ getCurrentDirectory
+    allFiles <- lift $ listDirectory (cd </> keysDir)
+    let keys      = filter (\a -> length a == 128) allFiles
+    let processes = runningProcesses s
+    let psData    = prepareNodesClient (length processes) ((\e -> keysDir </> e) <$> keys)
+    runningProcesses <- lift $ runNodes psData
+    lift $ void $ sequence $ putStr . show  <$> runningProcesses
+    put $ s { runningClientProcesses = runningProcesses }
+  else lift $ putStrLn $ "Client already launched! " <> show (runningClientProcesses s)
 
 terminateCluster :: StateT RunningEnvironment IO ()
 terminateCluster = do
     s <- get
     exitCodes <- lift $ terminateProcesses (runningClientProcesses s ++ runningProcesses s)
     lift $ putStrLn $ "Exit codes: " <> show (show <$> exitCodes)
-    put (XXX [] [] Nothing)
+    put (EnvData [] [] Nothing [])
 
 status :: StateT RunningEnvironment IO ()
-status =  do
+status = do
     s <- get
     let procs = runningProcesses s
     let clientProcs = runningClientProcesses s
@@ -347,6 +396,12 @@ status =  do
     lift $ void     $ sequence $ putStr . show <$> clientProcs
     lift $ putStrLn $ "\nStopped node: " <> show (stoppedNode s)
 
+runScript :: StateT RunningEnvironment IO ()
+runScript = do
+  s <- get
+  put $ s { script = scriptData
+          }
+
 execClusterCmd :: ClusterCmd -> StateT RunningEnvironment IO ()
 execClusterCmd  = \case
   ClusterLaunch n     -> launchCluster n *> launchClient
@@ -354,6 +409,7 @@ execClusterCmd  = \case
   ClusterNodeStop nId -> killProcess nId
   ClusterTerminate    -> terminateCluster
   ClusterStatus       -> status
+  ClusterScript       -> runScript
 
 execQueryClientCmd :: QueryNode -> StateT RunningEnvironment IO ()
 execQueryClientCmd = \case
@@ -384,5 +440,11 @@ runClientCmd clientId s = let
 
   withProcess_ nc $ \p -> do
       out <- hGetContents $ getStdout p
-      void .evaluate $ length out -- lazy I/O :(
+      void . evaluate $ length out -- lazy I/O :(
       mapM_ putStrLn $ take 100 $ lines out
+
+scriptData :: [String]
+scriptData = [ "cluster 3"
+             , "all status"
+             , "all submit 97af2031b33efb033c7c377c53dc94a22c6be60839efb23201a9fdda2b8ab785 500"
+             ]
