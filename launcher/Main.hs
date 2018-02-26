@@ -346,9 +346,9 @@ checkPrivateKeys n = do
   cd       <- getCurrentDirectory
   allFiles <- listDirectory (cd </> keysDir)
   let keys = filter (\a -> length a == 128) allFiles
-  if length keys < n
-    then void $ runProcess $ keyGenerator n
-    else pure ()
+  if length keys == n
+    then pure ()
+    else void $ runProcess $ keyGenerator n
 
 launchCluster :: Int -> StateT RunningEnvironment IO ()
 launchCluster n = do
@@ -441,7 +441,7 @@ runClientCmd clientId s = let
   withProcess_ nc $ \p -> do
       out <- hGetContents $ getStdout p
       void . evaluate $ length out -- lazy I/O :(
-      mapM_ putStrLn $ take 100 $ lines out
+      mapM_ putStrLn $ take 200 $ lines out
 
 scriptData :: [String]
 scriptData = [ "cluster 3"

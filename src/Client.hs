@@ -70,7 +70,7 @@ clientCmdToNodeExchange sk clientCmd =
 sendExchange :: NodeConversation -> ClientExchange -> IO ClientExchangeResponse
 sendExchange (NodeConversation Conversation {..}) exchange =
     let encodedExchange = (BL.toStrict . encode . ClientExchange) exchange
-    in do resp <- send encodedExchange *> recv
+    in do resp <- send encodedExchange *> recvAll recv
           pure $ decodeClientExchangeResponse resp
 
 connect :: NodeId -> SecretKey -> NodeConversation -> Conversation -> IO Bool

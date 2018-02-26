@@ -5,6 +5,7 @@ module Utils
     , logThread
     , showNodeId
     , nextStep
+    , recvAll
     ) where
 
 import Control.Concurrent (myThreadId)
@@ -17,7 +18,6 @@ import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Digest.Pure.SHA as SHA
-import qualified Data.ByteString.Conversion as DBC
 import qualified Data.Text as T
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Prelude hiding (log)
@@ -47,3 +47,14 @@ showNodeId = show . unNodeId
 nextStep :: String -> IO () -> IO ()
 nextStep "" _ = putStrLn "Closed by peer!"
 nextStep _ io = io
+
+recvAll :: IO ByteString -> IO ByteString
+recvAll recv = loop "" where
+  loop :: ByteString -> IO ByteString
+  loop acc = do
+    d <- recv
+    if BSC.length d == 4096
+      then loop (acc <> d)
+      else do
+        let resp = acc <> d
+        resp <$ (logThread $ "Recieved " <> show (BSC.length resp) <> " bytes of data.")

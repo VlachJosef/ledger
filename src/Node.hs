@@ -17,7 +17,7 @@ import Control.Concurrent
 import Control.Exception (try, IOException)
 import Control.Logging
 import Crypto.Sign.Ed25519 (Signature, PublicKey(..))
-import Data.Binary
+import Data.Binary (encode)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Conversion as DBC
@@ -151,7 +151,8 @@ txInfo :: Transaction -> [String]
 txInfo tx =
   ($tx) <$> [ show . deriveAddress . from . transfer
             , show . to . transfer
-            , show . amount . transfer]
+            , show . amount . transfer
+            , show . transactionId]
 
 txsInfo :: [Transaction] -> [[String]]
 txsInfo txs = txInfo <$> txs
@@ -220,7 +221,7 @@ broadcastToExchange = \case
 synchonizeBlockChain :: NodeState -> Int -> Conversation -> IO ()
 synchonizeBlockChain nodeState n cc @ Conversation {..} = do
   logThread $ "Synchronizing. Asking for block " <> show n
-  response <- send (encodeNodeExchange $ QueryBlock n) *> recv
+  response <- send (encodeNodeExchange $ QueryBlock n) *> recvAll recv
   case decodeNodeExchangeResponse response of
     BlockResponse (Just block) -> do
       logThread $ "Synchronizing. Block number " <> show n <> " received. Adding it to blockchain"
@@ -237,7 +238,7 @@ neighbourHandler nodeState broadcastChannel nodeId cc @ Conversation {..} = do
   loop = do
     logThread $ "Connected to nodeId " <> show nodeId <> ", reading from channel"
     broadcast <- readChan broadcastChannel
-    response <- send (encodeNodeExchange $ broadcastToExchange broadcast) *> recv
+    response <- send (encodeNodeExchange $ broadcastToExchange broadcast) *> recvAll recv
     let dec = decodeNodeExchangeResponse response
     logThread $ "Connected and recieved nodeId " <> show nodeId <> ", exchange response " <> show dec
     loop
@@ -283,7 +284,7 @@ commu nodeState conversation = do
       where
         loop :: IO ()
         loop = do
-            input <- recv conversation
+            input <- recvAll (recv conversation)
             let exchange = decodeExchange input
             logThread $ "node " <> myId <> " received " <> show exchange
             exchangeResponse <-
