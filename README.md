@@ -1,23 +1,47 @@
 # crypto-ledger
 
-Quick guide (assuming all commands are run from same folder as this `README.md`):
+1. Run `./launcher.sh`
+2. Once Launcher is running run commands from below to interact with cluster.
 
-1. Run `stack build`
-2. Run `./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/crypto-ledger-client` to create random secret keys. They will be placed `keys` folder. Run once for every client you want to launch.
-3. Run node by running script `./run-node.sh <node_id> <number_of_nodes>`
-   For `> ./run-node.sh 0 1`
-       `> ./run-node.sh 1 1` will launch two nodes with `node_id`s 0 and 1.
-4. Run client by running script `./run-client.sh <client_id> <node_id> <secret_key>` where `<secret_key>` is name of file containing secret key in `keys` folder.
-   For example `./run-client.sh 100 0 6517380882af1dad2a46bd32166c485a28ca8cf098f383c96f89d53f957db7c9` will launch client which will connect to node 0
-5. Connect to the client by `nc -U ./sockets/<socket_name>`
-   For example `nc -U ./sockets/100.sock` will connet to the client with `client_id` 100.
-6. Once connected to client you can issue these commands:
-     `> status`                    - raw insight into state of connected node (output needs lots of polishing)
-     `> BALANCE <address>`         - example: `> BALANCE BQPdvHitAnbz69jqDJB2PyH17MmbRgjQU13zdagpAUP5` returns balance for `<address>`
-     `> QUERY <transactionId>`     - example: `> QUERY GCcJmkjWcvZwHB5DTPY97omdSxTbM32kiUuTvn4Zmvfw` returns `true` / `false`
-     `> SUBMIT <address> <amount>` - example: `> SUBMIT BQPdvHitAnbz69jqDJB2PyH17MmbRgjQU13zdagpAUP5 100` returns `<transactionId>`
+## Launcher commands
 
+`cluster n` - Run n nodes every node will have associated client with its own Secret Key.
 
+`status`    - Print basic Launcher state (running nodes, clients and if some node is stopped or not).
 
-For developing run:
-> stack ghci --test crypto-ledger:lib crypto-ledger:crypto-ledger-test
+`terminate` - Will stop all running nodes and clients.
+
+`stop n`    - According the task definition at any time only one node can be down. This command will bring down node `n`.
+
+`launch`    - This command is complement of `stop n`, it will launch previously stopped node `n`.
+
+`script <scriptName>` - Will execute commands from the script one after another. Scripts must be placed in `scripts` folder.
+
+Once cluster is running there is option to launch any command on single or all running nodes. To execute client command on all running node prepedn command with `all`:
+
+`all status`                    - raw insight into state of connected node (output needs lots of polishing).
+
+`all submit <address> <amount>` - will submit `<amount>` to the adresss `<address>`, returns `<transactionId>`.
+
+`all balance <address>`         - returns balance for `<address>`.
+
+`all query <transactionId>`     - returns `true` / `false` depending if transaction was processed or not on the node.
+
+To run client command on single client instead of `all` use clientId, hint use autocomplete to see available commands and clientIds.
+
+## Script example
+
+For script example see `scripts/initial`. This script looks similar to this:
+```
+cluster 3
+all status
+all submit 97af2031b33efb033c7c377c53dc94a22c6be60839efb23201a9fdda2b8ab785 50
+all submit 97af2031b33efb033c7c377c53dc94a22c6be60839efb23201a9fdda2b8ab785 50
+all submit 97af2031b33efb033c7c377c53dc94a22c6be60839efb23201a9fdda2b8ab785 50
+```
+
+To execute this script from launcher use `script initial`. Hint use autocomplete to see all available scripts.
+
+This script will launch cluster of three nodes, print the status of the nodes after launch and then on every node will execute three transaction to transfer amount of `50` to address `97af2031b33efb033c7c377c53dc94a22c6be60839efb23201a9fdda2b8ab785`.
+
+Note that addresses and secretkeys of clients are generated with constant seed so on every launch the same SecretKeys are generated (if necessary) and same `Distribution.keys` is produced.
