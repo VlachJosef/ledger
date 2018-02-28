@@ -6,7 +6,7 @@
 module Main where
 
 import Control.Applicative
---import Control.Concurrent
+import Control.Concurrent
 import GHC.IO.Exception
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BSL
@@ -38,6 +38,9 @@ clientExec  = binDir <> "crypto-ledger-client"
 nodeExec   :: FilePath
 nodeExec    = binDir <> "crypto-ledger-node"
 
+scriptsDir :: FilePath
+scriptsDir = "scripts"
+
 pattern Script    :: String
 pattern Script    = "script"
 pattern Cluster   :: String
@@ -64,7 +67,7 @@ data ClusterCmd
   | ClusterNodeStop NodeId
   | ClusterTerminate
   | ClusterStatus
-  | ClusterScript
+  | ClusterScript String
   deriving (Show)
 
 data ClientCmd
@@ -134,13 +137,13 @@ pQueryNode
   <|> pQueryNodeJustNode
 
 pClusterLaunch :: Parsec.Parsec String () ClusterCmd
-pClusterLaunch = ClusterLaunch <$> (string Cluster *> Parsec.spaces *> pIntPositive)
+pClusterLaunch = ClusterLaunch <$> (string Cluster *> Parsec.spaces *> (pIntPositive >>= (\i -> if i >= 100 then Parsec.parserFail ("Max number of nodes in custer is 99") else pure i)))
 
 pClusterStatus :: Parsec.Parsec String () ClusterCmd
 pClusterStatus = ClusterStatus <$ string "status"
 
 pClusterScript :: Parsec.Parsec String () ClusterCmd
-pClusterScript = ClusterScript <$ string "script"
+pClusterScript = ClusterScript <$> pStringWithParam "script"
 
 pClusterLaunchNode :: Parsec.Parsec String () ClusterCmd
 pClusterLaunchNode = ClusterNodeLaunch <$ string Launch
@@ -154,7 +157,7 @@ pClusterTerminate = ClusterTerminate <$ string Terminate
 pClusterCmd :: Parsec.Parsec String () ClusterCmd
 pClusterCmd
   =   Parsec.try pClusterStatus
-  <|> pClusterScript
+  <|> Parsec.try pClusterScript
   <|> pClusterLaunch
   <|> pClusterLaunchNode
   <|> pClusterNodeStop
@@ -169,7 +172,7 @@ sourceName :: String
 sourceName = "launcher-params"
 
 ciScript    :: CommandInfo
-ciScript     = CommandInfo Script    False
+ciScript     = CommandInfo Script    True
 ciCluster   :: CommandInfo
 ciCluster    = CommandInfo Cluster   True
 ciLaunch    :: CommandInfo
@@ -198,9 +201,19 @@ commandsAfterAll = [ciStatus, ciSubmit, ciBalance, ciQuery]
 settings :: Settings (StateT RunningEnvironment IO)
 settings = setComplete comp defaultSettings
 
+allScripts :: IO [String]
+allScripts = do
+  cd    <- getCurrentDirectory
+  files <- listDirectory (cd </> scriptsDir)
+  pure files
+
+scriptPrefix :: String
+scriptPrefix = "script "
+
 comp :: (String, String) -> StateT RunningEnvironment IO ([Char], [Completion])
 comp (onLeft, onRight) = do
   s <- get
+  scripts <- lift $ allScripts
   let
     rOnLeft :: String
     rOnLeft = reverse onLeft
@@ -211,12 +224,19 @@ comp (onLeft, onRight) = do
     firstOrderCommands :: [CommandInfo]
     firstOrderCommands = commands ++ ((\a -> (CommandInfo a True)) <$> clientNodeIds)
 
+    scriptCommands :: [CommandInfo]
+    scriptCommands = ((\a -> (CommandInfo a False)) <$> scripts)
+
     clientCommand :: Maybe String
     clientCommand = find (\a -> take (length a) rOnLeft == a) ((\a -> a <> " ") <$> ("all" : clientNodeIds))
 
+    filterCmds pref cmds = (filter (\a -> isPrefixOf (drop (length pref) rOnLeft) (command a)) cmds, pref)
+
     (commandInfos, prefix) = case clientCommand of
-      Nothing    -> (filter (\a -> isPrefixOf rOnLeft (command a)) firstOrderCommands, "")
-      Just match -> (filter (\a -> isPrefixOf (drop (length match) rOnLeft) (command a)) commandsAfterAll, match)
+      Nothing    -> if isPrefixOf scriptPrefix rOnLeft
+        then filterCmds scriptPrefix scriptCommands
+        else filterCmds ""           firstOrderCommands
+      Just match -> filterCmds match commandsAfterAll
 
     in pure (reverse prefix, (\CommandInfo{..} -> Completion command command takeParams) <$> commandInfos)
 
@@ -261,7 +281,7 @@ instance Show NodeId where
 data RunningEnvironment =
   EnvData { runningProcesses :: [RunningProcess]
           , runningClientProcesses :: [RunningProcess]
-          , stoppedNode :: Maybe ProcessData
+          , stoppedNode :: Maybe (ProcessData, ProcessData) -- stopped Node and associated client
           , script :: [String]
           }
 
@@ -314,9 +334,12 @@ relaunchProcess :: StateT RunningEnvironment IO ()
 relaunchProcess = do
   s <- get
   case stoppedNode s of
-    Just processData -> do
+    Just (processData, processDataClient) -> do
       runningProcess <- lift $ (runNode processData)
+      --lift $ threadDelay $ 500 * 1000 -- delay a little so node manage to create .sock file
+      runningProcessClient <- lift $ (runNode processDataClient)
       put $ s { runningProcesses = runningProcess : (runningProcesses s)
+              , runningClientProcesses = runningProcessClient : (runningClientProcesses s)
               , stoppedNode = Nothing
               }
       lift $ putStrLn $ "Process nodeId " <> show (nodeId processData) <> " relaunched."
@@ -326,19 +349,23 @@ killProcess :: NodeId -> StateT RunningEnvironment IO ()
 killProcess nodeIdToStop = do
   s <- get
   let nodeIdToStopPred runningProcess = (nodeId . processData) runningProcess == nodeIdToStop
+  let clientIdCoStopPred runningProcess = (nodeId . processData) runningProcess == NodeId (100 + (unNodeId nodeIdToStop))
   case stoppedNode s of
-    Just nId -> case find nodeIdToStopPred (runningProcesses s) of
+    Just (nId, processDataClient) -> case find nodeIdToStopPred (runningProcesses s) of
       Just _  -> lift $ putStrLn $ "You can stop only one process at a time. Process " <> show nId <> " is already stopped."
       Nothing -> lift $ putStrLn $ "Process " <> show nId <> " is already stopped."
     Nothing -> do
       let (toKill, toKeep) = partition nodeIdToStopPred (runningProcesses s)
-      case toKill of
-        [toK] -> do
+      let (toKillClients, toKeepClients) = partition clientIdCoStopPred (runningClientProcesses s)
+      case (toKill, toKillClients) of
+        ([toK], [toK2]) -> do
           lift $ void $ (terminateProcess . runningProcess) toK
+          lift $ void $ (terminateProcess . runningProcess) toK2
           put $ s { runningProcesses = toKeep
-                  , stoppedNode = Just (processData toK)
+                  , runningClientProcesses = toKeepClients
+                  , stoppedNode = Just ((processData toK), (processData toK2))
                   }
-        [] -> lift $ putStrLn $ "No running process with nodeId " <> show nodeIdToStop <> " found."
+        ([], []) -> lift $ putStrLn $ "No running process with nodeId " <> show nodeIdToStop <> " found."
         _  -> lift $ putStrLn $ "Error. More than one process with nodeId " <> show nodeIdToStop <> " found."
 
 checkPrivateKeys :: Int -> IO ()
@@ -396,11 +423,29 @@ status = do
     lift $ void     $ sequence $ putStr . show <$> clientProcs
     lift $ putStrLn $ "\nStopped node: " <> show (stoppedNode s)
 
-runScript :: StateT RunningEnvironment IO ()
-runScript = do
-  s <- get
-  put $ s { script = scriptData
-          }
+myReadFile :: String -> IO (Maybe [String])
+myReadFile sFile = let
+  f = scriptsDir </> sFile
+  in do
+  fileExists <- doesFileExist f
+  if fileExists
+    then do
+      scriptContent <- BSC.readFile f
+      pure $ Just $ BSC.unpack <$> BSC.lines scriptContent
+    else do
+    cd <- getCurrentDirectory
+    putStrLn $ "File " <> cd </> f <> " not found."
+    pure Nothing
+
+runScript :: String -> StateT RunningEnvironment IO ()
+runScript sName = do
+  scriptData <- lift $ myReadFile sName
+  case scriptData of
+    Nothing -> pure ()
+    Just sData -> do
+      s <- get
+      put $ s { script = sData
+              }
 
 execClusterCmd :: ClusterCmd -> StateT RunningEnvironment IO ()
 execClusterCmd  = \case
@@ -409,7 +454,7 @@ execClusterCmd  = \case
   ClusterNodeStop nId -> killProcess nId
   ClusterTerminate    -> terminateCluster
   ClusterStatus       -> status
-  ClusterScript       -> runScript
+  ClusterScript sName -> runScript sName
 
 execQueryClientCmd :: QueryNode -> StateT RunningEnvironment IO ()
 execQueryClientCmd = \case
@@ -442,9 +487,3 @@ runClientCmd clientId s = let
       out <- hGetContents $ getStdout p
       void . evaluate $ length out -- lazy I/O :(
       mapM_ putStrLn $ take 200 $ lines out
-
-scriptData :: [String]
-scriptData = [ "cluster 3"
-             , "all status"
-             , "all submit 97af2031b33efb033c7c377c53dc94a22c6be60839efb23201a9fdda2b8ab785 500"
-             ]

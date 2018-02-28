@@ -3,6 +3,8 @@ module Main where
 import Address
 import Client
 import ClientCommandLine
+import Control.Exception (catch, IOException)
+import Control.Concurrent (threadDelay)
 import Control.Logging
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString as BS
@@ -53,11 +55,17 @@ readSecretKey filePath = do
         else error $ "No secret key on found in " <> filePath
 
 connectToNode :: ClientConfig -> SecretKey -> IO ()
-connectToNode clientConfig sk =
-    connectToUnixSocket
-        "sockets"
-        (nodeId clientConfig)
-        (connectNode clientConfig sk)
+connectToNode clientConfig sk = loop where
+  loop = catch connect resolve
+
+  resolve :: IOException -> IO ()
+  resolve ex = do
+    putStrLn $ "Client error: " <> show ex
+    threadDelay $ 1000 * 1000
+    putStrLn $ "Retrying connection to " <> (show . nodeId) clientConfig <> " node."
+    loop
+
+  connect = connectToUnixSocket "sockets" (nodeId clientConfig) (connectNode clientConfig sk)
 
 connectNode :: ClientConfig -> SecretKey -> Conversation -> IO ()
 connectNode clientConfig sk conversation = let
