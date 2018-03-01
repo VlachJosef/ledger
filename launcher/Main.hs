@@ -22,7 +22,7 @@ import System.Console.Haskeline.History
 import System.Directory
 import Data.Either.Validation
 import Control.Exception
-import System.FilePath ((</>))
+import System.FilePath ((</>), takeExtension)
 import qualified Text.Parsec as Parsec
 import Text.ParserCombinators.Parsec.Char
 import Text.ParserCombinators.Parsec.Combinator
@@ -240,8 +240,17 @@ comp (onLeft, onRight) = do
 
     in pure (reverse prefix, (\CommandInfo{..} -> Completion command command takeParams) <$> commandInfos)
 
+removeLogs :: IO ()
+removeLogs = do
+  cd       <- getCurrentDirectory
+  allFiles <- listDirectory (cd </> "log")
+  let logs  = filter (\a -> takeExtension a == ".log") allFiles
+  void . sequence $ (\log -> removeFile (cd </> "log" </> log)) <$> logs
+
 main :: IO ()
-main = evalStateT (runInputT settings loop) (EnvData [] [] Nothing [])
+main = do
+  removeLogs
+  evalStateT (runInputT settings loop) (EnvData [] [] Nothing [])
    where
        loop :: InputT (StateT RunningEnvironment IO) ()
        loop = do

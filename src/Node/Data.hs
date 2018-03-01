@@ -18,5 +18,5 @@ data NodeState = NodeState
     }
 
 data AddBlockRes
- = BlockAdded [LedgerError] Block Ledger
+ = BlockAdded [LedgerError] Block Ledger BlockChain
  | BlockNotAdded String

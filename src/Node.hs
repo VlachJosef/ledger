@@ -16,7 +16,7 @@ import Block
 import Control.Concurrent
 import Control.Exception (try, IOException)
 import Control.Logging
-import Crypto.Sign.Ed25519 (Signature, PublicKey(..))
+import Crypto.Sign.Ed25519 (Signature)
 import Data.Binary (encode)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -35,7 +35,6 @@ import System.Directory (doesFileExist, removeFile)
 import Utils
 import Transaction
 import Text.PrettyPrint.Boxes as Boxes (render, vcat, hsep, left, text)
-import Time
 import Node.Data
 import System.Posix.Signals
 
@@ -128,14 +127,14 @@ addBlock block nodeState = let
   blocks <- takeMVar blocksM
   ledger <- takeMVar ledgerM
   case addReplaceBlock block nodeState blocks ledger of
-    BlockAdded errors addedBlock ledgerUpd -> do
-      logThread $ "Adding block " <> show (index block) <> " to the blockchain."
+    BlockAdded errors addedBlock ledgerUpd blocksUpdated -> do
+      logThread $ "Adding block " <> show (index block) <> " to the blockchain. Blockchain size: " <> show (NEL.length blocks)
       -- Remove transactions from transaction pool which are in the newly added block
       modifyMVar_ txPoolM (\txs -> pure $ txs \\ transactions addedBlock)
 
       reportProblems errors
       putMVar ledgerM ledgerUpd
-      putMVar blocksM (addedBlock <| blocks)
+      putMVar blocksM (addedBlock <| blocksUpdated)
       pure $ Just addedBlock
 
     BlockNotAdded msg -> do
@@ -161,7 +160,7 @@ blockInfo :: Block -> String
 blockInfo block = let
   blockIndex = (show . index) block
   txs = (txsInfo . transactions) block
-  txsWithBlockId = txs ++ [[blockIndex]]
+  txsWithBlockId = txs ++ [[blockIndex]] ++ [[(show . Block.timestamp) block]]
   in render $ hsep 2 left (map (vcat left . map Boxes.text) (transpose txsWithBlockId))
 
 nodeStatus :: NodeState -> IO NodeInfo
@@ -240,7 +239,7 @@ neighbourHandler nodeState broadcastChannel nodeId cc @ Conversation {..} = do
     broadcast <- readChan broadcastChannel
     response <- send (encodeNodeExchange $ broadcastToExchange broadcast) *> recvAll recv
     let dec = decodeNodeExchangeResponse response
-    logThread $ "Connected and recieved nodeId " <> show nodeId <> ", exchange response " <> show dec
+    logThread $ "Connected and recieved from nodeId " <> show nodeId <> ", exchange response " <> show dec
     loop
 
 encodeNodeExchange :: NodeExchange -> ByteString

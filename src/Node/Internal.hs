@@ -80,7 +80,7 @@ addReplaceBlock block nodeState blocks ledger =
      then
        case addBlockToLedger block ledger of
         BlockToLedger errors ledgerUpd addedBlock ->
-          BlockAdded errors addedBlock ledgerUpd
+          BlockAdded errors addedBlock ledgerUpd blocks
         NoValidTransaction ->
           BlockNotAdded $ "Block " <> show recievedBlockId <> " contains no valid transaction."
      else if currentBlockIndex == recievedBlockId && currentBlock /= block
