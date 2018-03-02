@@ -22,7 +22,7 @@ main =
             describe "addBlock" $ do
                 it "should return balance from Ledger" $
                     let tx = mkTransaction testPk testPk2 100
-                        block = (mkBlock [tx]) {index = 2}
+                        block = (mkBlock [tx]) {index = Index 2}
                     in withStdoutLogging $ do
                           nodeState <- initialNodeState testNodeConfig [(deriveAddress testPk, 100000)]
                           mBlock <- addBlock block nodeState
@@ -32,8 +32,8 @@ main =
                 it "should rewind last block if new block received is of older date" $
                     let tx = mkTransaction testPk testPk2 30
                         tx2 = mkTransaction testPk testPk2 50
-                        firstBlock = (mkBlock [tx]) {index = 2, timestamp = 2}
-                        secondBlock = (mkBlock [tx2]) {index = 2, timestamp = 1}
+                        firstBlock = (mkBlock [tx]) {index = Index 2, timestamp = 2}
+                        secondBlock = (mkBlock [tx2]) {index = Index 2, timestamp = 1}
                     in do nodeState <- initialNodeState testNodeConfig [(deriveAddress testPk, 100000)]
                           mBlock <- addBlock firstBlock nodeState
                           mBlock `shouldBe` Just firstBlock

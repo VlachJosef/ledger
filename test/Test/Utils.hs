@@ -55,4 +55,4 @@ emptyBlock :: Block
 emptyBlock = mkBlock []
 
 mkBlock :: [Transaction] -> Block
-mkBlock txs = Block {index = 1, transactions = txs, Block.timestamp = 0}
+mkBlock txs = Block {index = Index 1, transactions = txs, Block.timestamp = 0}

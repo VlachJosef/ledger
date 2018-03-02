@@ -339,6 +339,14 @@ terminateProcess ps = do
   stopProcess ps
   waitExitCode ps
 
+sortProcesses :: RunningProcess -> RunningProcess -> Ordering
+sortProcesses rp1 rp2
+  | nId rp1 <  nId rp2 = LT
+  | nId rp1 == nId rp2 = EQ
+  | otherwise          = GT
+  where
+    nId = unNodeId . nodeId . processData
+
 relaunchProcess :: StateT RunningEnvironment IO ()
 relaunchProcess = do
   s <- get
@@ -348,7 +356,7 @@ relaunchProcess = do
       --lift $ threadDelay $ 500 * 1000 -- delay a little so node manage to create .sock file
       runningProcessClient <- lift $ (runNode processDataClient)
       put $ s { runningProcesses = runningProcess : (runningProcesses s)
-              , runningClientProcesses = runningProcessClient : (runningClientProcesses s)
+              , runningClientProcesses = sortBy sortProcesses (runningProcessClient : (runningClientProcesses s))
               , stoppedNode = Nothing
               }
       lift $ putStrLn $ "Process nodeId " <> show (nodeId processData) <> " relaunched."
@@ -481,7 +489,7 @@ execClientCmd clientId = \case
 
 execCommand :: Cmd -> StateT RunningEnvironment IO ()
 execCommand = \case
-  EmptyCmd                  -> lift (pure ())
+  EmptyCmd                  -> lift $ pure ()
   InvalidCmd cmd errors     -> lift $ putStrLn $ "InvalidCmd: " <> show cmd <> ", parser error: " <> show errors
   QueryNodeCmd queryNodeCmd -> execQueryClientCmd queryNodeCmd
   ClusterCmd clusterCmd     -> execClusterCmd clusterCmd

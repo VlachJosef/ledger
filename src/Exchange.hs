@@ -22,7 +22,7 @@ instance Binary Exchange
 
 data NodeExchange
     = AddTransaction Transaction
-    | QueryBlock Int
+    | QueryBlock Index
     | AddBlock Block
     deriving (Show, G.Generic)
 
@@ -74,7 +74,7 @@ instance Binary ClientExchangeResponse
 
 data Broadcast
     = TxBroadcast Transaction
-    | BlockBroadcast Block
+    | BlockBroadcast Block deriving (Show)
 
 decodeExchangeAs
     :: Binary a

@@ -75,7 +75,7 @@ addReplaceBlock block nodeState blocks ledger =
      recievedBlockId   = index block
      currentBlock      = NEL.head blocks
      currentBlockIndex = index currentBlock
-     expectedBlockId   = currentBlockIndex + 1
+     expectedBlockId   = nextIndex currentBlockIndex
   in if expectedBlockId == recievedBlockId
      then
        case addBlockToLedger block ledger of

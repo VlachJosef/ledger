@@ -72,7 +72,7 @@ mineblock nodeState = loop where
       chain <- readMVar $ blockchain nodeState
       timestamp <- now
       let lastBlock = NEL.head chain
-      let nextBlockId = 1 + index lastBlock
+      let nextBlockId = nextIndex (index lastBlock)
       let nextBlock = Block nextBlockId txs timestamp
       maybeValidBlock <- addBlock nextBlock nodeState
       case maybeValidBlock of
@@ -160,7 +160,9 @@ blockInfo :: Block -> String
 blockInfo block = let
   blockIndex = (show . index) block
   txs = (txsInfo . transactions) block
-  txsWithBlockId = txs ++ [[blockIndex]] ++ [[(show . Block.timestamp) block]]
+  txsWithBlockId = txs ++
+    [["Index    : " <> blockIndex]] ++
+    [["Timestamp: " <> (show . Block.timestamp) block]]
   in render $ hsep 2 left (map (vcat left . map Boxes.text) (transpose txsWithBlockId))
 
 nodeStatus :: NodeState -> IO NodeInfo
@@ -214,32 +216,32 @@ handleClientExchange nodeState =
 
 broadcastToExchange :: Broadcast -> NodeExchange
 broadcastToExchange = \case
-  TxBroadcast tx -> AddTransaction tx
+  TxBroadcast tx       -> AddTransaction tx
   BlockBroadcast block -> AddBlock block
 
-synchonizeBlockChain :: NodeState -> Int -> Conversation -> IO ()
-synchonizeBlockChain nodeState n cc @ Conversation {..} = do
-  logThread $ "Synchronizing. Asking for block " <> show n
-  response <- send (encodeNodeExchange $ QueryBlock n) *> recvAll recv
+synchonizeBlockChain :: NodeState -> Index -> Conversation -> NodeId -> IO ()
+synchonizeBlockChain nodeState idx cc @ Conversation {..} nodeId = do
+  logThread $ "[Synchronizing " <> show nodeId  <> "] Asking for block " <> show idx
+  response <- send (encodeNodeExchange $ QueryBlock idx) *> recvAll recv
   case decodeNodeExchangeResponse response of
     BlockResponse (Just block) -> do
-      logThread $ "Synchronizing. Block number " <> show n <> " received. Adding it to blockchain"
+      logThread $ "[Synchronizing " <> show nodeId  <> "] Block number " <> show idx <> " received. Adding it to blockchain"
       _ <- addBlock block nodeState
-      synchonizeBlockChain nodeState (n + 1) cc
-    BlockResponse Nothing -> logThread $ "Synchronizing. Block number " <> show n <> " don't received. Synchronization complete."
-    other -> logThread $ "Error: Expected BlockResponse got: " <> show other
+      synchonizeBlockChain nodeState (nextIndex idx) cc nodeId
+    BlockResponse Nothing -> logThread $ "[Synchronizing " <> show nodeId  <> "] Block number " <> show idx <> " don't received. Synchronization complete."
+    other -> logThread $ "[Synchronizing " <> show nodeId  <> "] Error: Expected BlockResponse got: " <> show other
 
 neighbourHandler :: NodeState -> Chan Broadcast -> NodeId -> Conversation -> IO ()
 neighbourHandler nodeState broadcastChannel nodeId cc @ Conversation {..} = do
   blocks <- readMVar (blockchain nodeState)
-  synchonizeBlockChain nodeState (List.length blocks + 1) cc
+  synchonizeBlockChain nodeState (nextIndex . Index $ List.length blocks) cc nodeId
   loop where
   loop = do
-    logThread $ "Connected to nodeId " <> show nodeId <> ", reading from channel"
     broadcast <- readChan broadcastChannel
-    response <- send (encodeNodeExchange $ broadcastToExchange broadcast) *> recvAll recv
+    logThread $ "[Neighbour Handler " <> show nodeId  <> "] to send: " <> show broadcast
+    response  <- send (encodeNodeExchange $ broadcastToExchange broadcast) *> recvAll recv
     let dec = decodeNodeExchangeResponse response
-    logThread $ "Connected and recieved from nodeId " <> show nodeId <> ", exchange response " <> show dec
+    logThread $ "[Neighbour Handler " <> show nodeId  <> "] recieved: " <> show dec
     loop
 
 encodeNodeExchange :: NodeExchange -> ByteString
@@ -270,14 +272,10 @@ retry nodeState broadcastChan nodeId = let
 nodeIdFromState :: NodeState -> NodeId
 nodeIdFromState = nodeId . nodeConfig
 
-nodeIdFromStateStr :: NodeState -> String
-nodeIdFromStateStr = showNodeId . nodeIdFromState
-
 commu :: NodeState -> Conversation -> IO Bool
 commu nodeState conversation = do
-    True <$ forkIO ((logThread $ "node " <> myId <> ". Forking new thread!") <* loopMain nodeState)
+    True <$ forkIO ((logThread $ "Forking new thread!") <* loopMain nodeState)
   where
-    myId = nodeIdFromStateStr nodeState
     loopMain :: NodeState -> IO ()
     loopMain ns = loop
       where
@@ -285,7 +283,7 @@ commu nodeState conversation = do
         loop = do
             input <- recvAll (recv conversation)
             let exchange = decodeExchange input
-            logThread $ "node " <> myId <> " received " <> show exchange
+            logThread $ "[Main handler] Received: " <> show exchange
             exchangeResponse <-
                 case exchange of
                     NodeExchange nodeExchange ->
@@ -328,27 +326,24 @@ establishClusterConnection nodeConfig = let
       Just initialDistribution -> do
         nodeState <- initialNodeState nodeConfig initialDistribution
         startMinerThread nodeState
-        _ <- connectToNeighbours nodeState
+        (void . connectToNeighbours) nodeState
         listenForClientConnection nodeState
       Nothing -> logThread "Error when reading distribution file."
-
-logMessage :: NodeId -> NodeId -> String -> IO ()
-logMessage nodeId neighbourId msg =
-   let myId = showNodeId nodeId
-       nId = showNodeId neighbourId
-   in logThread $ "node " <> myId <> ". " <> msg <> " with node: " <> nId
 
 connectToNeighbours :: NodeState -> IO [ThreadId]
 connectToNeighbours nodeState =
     let nodeNeighbours = (neighbours nodeState)
-        myId = nodeIdFromState nodeState
     in do sequence $
               (\nId ->
                    forkIO
-                       (do logMessage myId nId "Trying to establish connecting"
+                       (do logMessage nId "Trying to establish connecting"
                            myChan <- dupChan (broadcastChannel nodeState)
                            connectToNeighbour nodeState myChan nId
-                           logMessage myId nId "Terminating connection")) <$> nodeNeighbours
+                           logMessage nId "Terminating connection")) <$> nodeNeighbours where
+            logMessage :: NodeId -> String -> IO ()
+            logMessage neighbourId msg =
+              let nId = showNodeId neighbourId
+              in logThread $ msg <> " with node: " <> nId
 
 listenForClientConnection :: NodeState -> IO ()
 listenForClientConnection nodeState = do
