@@ -17,6 +17,9 @@ data NodeState = NodeState
     , broadcastChannel :: Chan Broadcast
     }
 
+fetchNodeId :: NodeState -> NodeId
+fetchNodeId = nodeId . nodeConfig
+
 data AddBlockRes
  = BlockAdded [LedgerError] Block Ledger BlockChain
  | BlockNotAdded String

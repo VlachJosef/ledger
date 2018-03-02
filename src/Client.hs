@@ -67,9 +67,9 @@ clientCmdToNodeExchange sk clientCmd =
                 transferSignature = dsign sk (encodeTransfer transfer)
             in MakeTransfer transfer transferSignature
 
-sendExchange :: NodeConversation -> ClientExchange -> IO ClientExchangeResponse
-sendExchange (NodeConversation Conversation {..}) exchange =
-    let encodedExchange = (BL.toStrict . encode . ClientExchange) exchange
+sendExchange :: NodeConversation -> NodeId -> ClientExchange -> IO ClientExchangeResponse
+sendExchange (NodeConversation Conversation {..}) nId exchange =
+    let encodedExchange = (BL.toStrict . encode . (ClientExchange nId)) exchange
     in do resp <- send encodedExchange *> recvAll recv
           pure $ decodeClientExchangeResponse resp
 
@@ -78,7 +78,7 @@ connect clientId sk nc (Conversation {..}) = do
   True <$
     forkIO ((logThread $ "Client " <> showNodeId clientId <> ". Forking new thread!") <* loop)
   where
-    sendNodeExchange = sendExchange nc
+    sendNodeExchange = sendExchange nc clientId
     ccToNodeExchange = clientCmdToNodeExchange sk
     sendResponse = send . response
     loop :: IO ()

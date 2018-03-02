@@ -173,7 +173,7 @@ nodeStatus nodeState = do
     let blocksInfo = blockInfo <$> blocks
     pure $
         NodeInfo
-            ((unNodeId . nodeId . nodeConfig) nodeState)
+            ((unNodeId . fetchNodeId) nodeState)
             (length txSize)
             (length blocks)
             (unNodeId <$> neighbours nodeState)
@@ -220,32 +220,35 @@ broadcastToExchange = \case
   BlockBroadcast block -> AddBlock block
 
 synchonizeBlockChain :: NodeState -> Index -> Conversation -> NodeId -> IO ()
-synchonizeBlockChain nodeState idx cc @ Conversation {..} nodeId = do
-  logThread $ "[Synchronizing " <> show nodeId  <> "] Asking for block " <> show idx
-  response <- send (encodeNodeExchange $ QueryBlock idx) *> recvAll recv
+synchonizeBlockChain nodeState idx cc @ Conversation {..} nId = do
+  logMessage $ "Asking for block " <> show idx
+  response <- send (encodeNodeExchange (fetchNodeId nodeState) (QueryBlock idx)) *> recvAll recv
   case decodeNodeExchangeResponse response of
     BlockResponse (Just block) -> do
-      logThread $ "[Synchronizing " <> show nodeId  <> "] Block number " <> show idx <> " received. Adding it to blockchain"
+      logMessage $ "Block number " <> show idx <> " received. Adding it to blockchain"
       _ <- addBlock block nodeState
-      synchonizeBlockChain nodeState (nextIndex idx) cc nodeId
-    BlockResponse Nothing -> logThread $ "[Synchronizing " <> show nodeId  <> "] Block number " <> show idx <> " don't received. Synchronization complete."
-    other -> logThread $ "[Synchronizing " <> show nodeId  <> "] Error: Expected BlockResponse got: " <> show other
+      synchonizeBlockChain nodeState (nextIndex idx) cc nId
+    BlockResponse Nothing -> logMessage $ "Block number " <> show idx <> " don't received. Synchronization complete."
+    other -> logMessage $ "Error: Expected BlockResponse got: " <> show other
+    where
+      logMessage msg = logThread $ "[Synchronizing " <> show nId  <> "] " <> msg
 
 neighbourHandler :: NodeState -> Chan Broadcast -> NodeId -> Conversation -> IO ()
-neighbourHandler nodeState broadcastChannel nodeId cc @ Conversation {..} = do
+neighbourHandler nodeState broadcastChannel nId cc @ Conversation {..} = do
   blocks <- readMVar (blockchain nodeState)
-  synchonizeBlockChain nodeState (nextIndex . Index $ List.length blocks) cc nodeId
+  synchonizeBlockChain nodeState (nextIndex . Index $ List.length blocks) cc nId
   loop where
   loop = do
     broadcast <- readChan broadcastChannel
-    logThread $ "[Neighbour Handler " <> show nodeId  <> "] to send: " <> show broadcast
-    response  <- send (encodeNodeExchange $ broadcastToExchange broadcast) *> recvAll recv
+    logMessage $ "to send: " <> show broadcast
+    response  <- send (encodeNodeExchange (fetchNodeId nodeState) (broadcastToExchange broadcast)) *> recvAll recv
     let dec = decodeNodeExchangeResponse response
-    logThread $ "[Neighbour Handler " <> show nodeId  <> "] recieved: " <> show dec
+    logMessage $ "recieved: " <> show dec
     loop
+  logMessage msg = logThread $ "[Neighbour Handler " <> show nId  <> "] " <> msg
 
-encodeNodeExchange :: NodeExchange -> ByteString
-encodeNodeExchange = BSL.toStrict . encode . NodeExchange
+encodeNodeExchange :: NodeId -> NodeExchange -> ByteString
+encodeNodeExchange nId = BSL.toStrict . encode . (NodeExchange nId)
 
 connectToNeighbour :: NodeState -> Chan Broadcast -> NodeId -> IO ()
 connectToNeighbour nodeState broadcastChan nodeId =
@@ -269,9 +272,6 @@ retry nodeState broadcastChan nodeId = let
     logThread $ "Trying reestablish connection with nodeId " <> nId
     connectToNeighbour nodeState broadcastChan nodeId
 
-nodeIdFromState :: NodeState -> NodeId
-nodeIdFromState = nodeId . nodeConfig
-
 commu :: NodeState -> Conversation -> IO Bool
 commu nodeState conversation = do
     True <$ forkIO ((logThread $ "Forking new thread!") <* loopMain nodeState)
@@ -286,9 +286,9 @@ commu nodeState conversation = do
             logThread $ "[Main handler] Received: " <> show exchange
             exchangeResponse <-
                 case exchange of
-                    NodeExchange nodeExchange ->
+                    NodeExchange _ nodeExchange ->
                        encode <$> handleNodeExchange ns nodeExchange
-                    ClientExchange clientNodeExchange ->
+                    ClientExchange _ clientNodeExchange ->
                        encode <$> handleClientExchange ns clientNodeExchange
 
             send conversation (BSL.toStrict exchangeResponse)
@@ -347,7 +347,7 @@ connectToNeighbours nodeState =
 
 listenForClientConnection :: NodeState -> IO ()
 listenForClientConnection nodeState = do
-    listenUnixSocket "sockets" (nodeIdFromState nodeState) (commu nodeState)
+    listenUnixSocket "sockets" (fetchNodeId nodeState) (commu nodeState)
 
 terminationHandler :: NodeConfig -> Signal ->  Handler
 terminationHandler nodeConfig signal = CatchOnce $ do

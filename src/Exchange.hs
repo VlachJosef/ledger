@@ -11,11 +11,13 @@ import qualified Data.ByteString.Lazy as BL
 import Data.List.NonEmpty
 import Data.Semigroup
 import qualified GHC.Generics as G
+import OrphanedShow
+import Serokell.Communication.IPC (NodeId)
 import Transaction
 
 data Exchange
-    = NodeExchange NodeExchange
-    | ClientExchange ClientExchange
+    = NodeExchange NodeId NodeExchange
+    | ClientExchange NodeId ClientExchange
     deriving (Show, G.Generic)
 
 instance Binary Exchange
