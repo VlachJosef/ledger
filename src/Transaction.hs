@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Transaction where
 
@@ -77,5 +76,5 @@ verifyTx Transaction {..} =
     let pk = from transfer
         enc = encodeTransfer transfer
     in if dverify pk enc signature
-           then (Right ())
-           else (Left InvalidSignature)
+           then Right ()
+           else Left InvalidSignature

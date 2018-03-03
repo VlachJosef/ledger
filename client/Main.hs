@@ -24,7 +24,7 @@ main = handleClient =<< execParser parseArguments
 terminationHandler :: ClientConfig -> Signal ->  Handler
 terminationHandler clientConfig signal = CatchOnce $ do
     logThread $ "Caught " <> show signal <> " signal."
-    let socketFile = "sockets/" <> ((show . unNodeId . clientId) clientConfig) <> ".sock"
+    let socketFile = "sockets/" <> (show . unNodeId . clientId) clientConfig <> ".sock"
     fileExists <- doesFileExist socketFile
     if fileExists
       then do

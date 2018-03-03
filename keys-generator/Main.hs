@@ -37,7 +37,7 @@ toKeyName = BSC.unpack . Base16.encode
 
 writeSecretKeys :: [SecretKey] -> IO ()
 writeSecretKeys sks =
-  void $ sequence $ (\sk -> writeSecretKey (keysDir </> (skToKeyName sk)) sk) <$> sks
+  void $ sequence $ (\sk -> writeSecretKey (keysDir </> skToKeyName sk) sk) <$> sks
 
 mkDistributionFile :: [PublicKey] -> IO String
 mkDistributionFile sks = do
@@ -79,4 +79,4 @@ allStrings :: [String]
 allStrings = [ c : s | s <- "" : allStrings, c <- ['A'..'Z']]
 
 seeds :: [BSC.ByteString]
-seeds = BSC.pack .reverse <$> printf "%032s" <$> allStrings
+seeds = BSC.pack . reverse . printf "%032s" <$> allStrings

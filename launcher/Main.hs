@@ -1,5 +1,4 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -13,6 +12,7 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Conversion as DBC
 import System.Process.Typed
 import Data.Semigroup ((<>))
+import Data.Maybe (fromMaybe)
 import Control.Monad.State.Strict
 import Serokell.Communication.IPC (NodeId(..))
 import System.IO
@@ -104,7 +104,7 @@ pNodeId :: Parsec.Parsec String () NodeId
 pNodeId = NodeId <$> pIntPositive
 
 pStringWithParam :: String -> Parsec.Parsec String () String
-pStringWithParam str = (string str *> Parsec.spaces *> many1 alphaNum)
+pStringWithParam str = string str *> Parsec.spaces *> many1 alphaNum
 
 pClientSubmit :: Parsec.Parsec String () ClientCmd
 pClientSubmit = Submit <$> pStringWithParam "submit" <*> (Parsec.spaces *> pIntPositive)
@@ -137,7 +137,7 @@ pQueryNode
   <|> pQueryNodeJustNode
 
 pClusterLaunch :: Parsec.Parsec String () ClusterCmd
-pClusterLaunch = ClusterLaunch <$> (string Cluster *> Parsec.spaces *> (pIntPositive >>= (\i -> if i >= 100 then Parsec.parserFail ("Max number of nodes in custer is 99") else pure i)))
+pClusterLaunch = ClusterLaunch <$> (string Cluster *> Parsec.spaces *> (pIntPositive >>= (\i -> if i >= 100 then Parsec.parserFail "Max number of nodes in custer is 99" else pure i)))
 
 pClusterStatus :: Parsec.Parsec String () ClusterCmd
 pClusterStatus = ClusterStatus <$ string "status"
@@ -210,30 +210,30 @@ allScripts = do
 scriptPrefix :: String
 scriptPrefix = "script "
 
-comp :: (String, String) -> StateT RunningEnvironment IO ([Char], [Completion])
+comp :: (String, String) -> StateT RunningEnvironment IO (String, [Completion])
 comp (onLeft, onRight) = do
   s <- get
-  scripts <- lift $ allScripts
+  scripts <- lift allScripts
   let
     rOnLeft :: String
     rOnLeft = reverse onLeft
 
     clientNodeIds :: [String]
-    clientNodeIds = (show . nodeId . processData) <$> runningClientProcesses s
+    clientNodeIds = show . nodeId . processData <$> runningClientProcesses s
 
     firstOrderCommands :: [CommandInfo]
-    firstOrderCommands = commands ++ ((\a -> (CommandInfo a True)) <$> clientNodeIds)
+    firstOrderCommands = commands ++ ((`CommandInfo` True) <$> clientNodeIds)
 
     scriptCommands :: [CommandInfo]
-    scriptCommands = ((\a -> (CommandInfo a False)) <$> scripts)
+    scriptCommands = ((`CommandInfo` False) <$> scripts)
 
     clientCommand :: Maybe String
-    clientCommand = find (\a -> take (length a) rOnLeft == a) ((\a -> a <> " ") <$> ("all" : clientNodeIds))
+    clientCommand = find (\a -> take (length a) rOnLeft == a) ((<> " ") <$> ("all" : clientNodeIds))
 
-    filterCmds pref cmds = (filter (\a -> isPrefixOf (drop (length pref) rOnLeft) (command a)) cmds, pref)
+    filterCmds pref cmds = (filter (isPrefixOf (drop (length pref) rOnLeft) . command) cmds, pref)
 
     (commandInfos, prefix) = case clientCommand of
-      Nothing    -> if isPrefixOf scriptPrefix rOnLeft
+      Nothing    -> if scriptPrefix `isPrefixOf` rOnLeft
         then filterCmds scriptPrefix scriptCommands
         else filterCmds ""           firstOrderCommands
       Just match -> filterCmds match commandsAfterAll
@@ -254,8 +254,8 @@ main = do
    where
        loop :: InputT (StateT RunningEnvironment IO) ()
        loop = do
-           s <- lift $ get
-           let (scriptCommand, rest) = maybe ("", []) id (uncons (script s))
+           s <- lift get
+           let (scriptCommand, rest) = fromMaybe ("", []) (uncons (script s))
            lift $ put $ s { script = rest
                           }
            let sc = if null scriptCommand
@@ -321,7 +321,7 @@ prepareNodes n = [ ProcessData (NodeId i) (proc nodeExec [show i, show n, "socke
 
 prepareNodesClient :: Int -> [FilePath] -> [ProcessData]
 prepareNodesClient n fps = [ ProcessData (NodeId clientNodeId) (proc clientExec ["-c", show clientNodeId, "-n", show i, "-k", privateKeyPath])
-     | (i, privateKeyPath) <- (zip [0 .. (n - 1)] fps),
+     | (i, privateKeyPath) <- zip [0 .. (n - 1)] fps,
        let clientNodeId = i + 100
      ]
 
@@ -352,21 +352,21 @@ relaunchProcess = do
   s <- get
   case stoppedNode s of
     Just (processData, processDataClient) -> do
-      runningProcess <- lift $ (runNode processData)
+      runningProcess <- lift $ runNode processData
       --lift $ threadDelay $ 500 * 1000 -- delay a little so node manage to create .sock file
-      runningProcessClient <- lift $ (runNode processDataClient)
-      put $ s { runningProcesses = runningProcess : (runningProcesses s)
-              , runningClientProcesses = sortBy sortProcesses (runningProcessClient : (runningClientProcesses s))
+      runningProcessClient <- lift $ runNode processDataClient
+      put $ s { runningProcesses = runningProcess : runningProcesses s
+              , runningClientProcesses = sortBy sortProcesses (runningProcessClient : runningClientProcesses s)
               , stoppedNode = Nothing
               }
       lift $ putStrLn $ "Process nodeId " <> show (nodeId processData) <> " relaunched."
-    Nothing  -> lift $ putStrLn $ "No process has been stopped."
+    Nothing  -> lift $ putStrLn "No process has been stopped."
 
 killProcess :: NodeId -> StateT RunningEnvironment IO ()
 killProcess nodeIdToStop = do
   s <- get
   let nodeIdToStopPred runningProcess = (nodeId . processData) runningProcess == nodeIdToStop
-  let clientIdCoStopPred runningProcess = (nodeId . processData) runningProcess == NodeId (100 + (unNodeId nodeIdToStop))
+  let clientIdCoStopPred runningProcess = (nodeId . processData) runningProcess == NodeId (100 + unNodeId nodeIdToStop)
   case stoppedNode s of
     Just (nId, processDataClient) -> case find nodeIdToStopPred (runningProcesses s) of
       Just _  -> lift $ putStrLn $ "You can stop only one process at a time. Process " <> show nId <> " is already stopped."
@@ -380,7 +380,7 @@ killProcess nodeIdToStop = do
           lift $ void $ (terminateProcess . runningProcess) toK2
           put $ s { runningProcesses = toKeep
                   , runningClientProcesses = toKeepClients
-                  , stoppedNode = Just ((processData toK), (processData toK2))
+                  , stoppedNode = Just (processData toK, processData toK2)
                   }
         ([], []) -> lift $ putStrLn $ "No running process with nodeId " <> show nodeIdToStop <> " found."
         _  -> lift $ putStrLn $ "Error. More than one process with nodeId " <> show nodeIdToStop <> " found."
@@ -412,7 +412,7 @@ launchClient = do
   --lift $ threadDelay $ 1 * 1000 * 1000
   s <- get
   if null (runningClientProcesses s) then do
-    cd <- lift $ getCurrentDirectory
+    cd <- lift getCurrentDirectory
     allFiles <- lift $ listDirectory (cd </> keysDir)
     let keys      = filter (\a -> length a == 128) allFiles
     let processes = runningProcesses s
@@ -434,9 +434,9 @@ status = do
     s <- get
     let procs = runningProcesses s
     let clientProcs = runningClientProcesses s
-    lift $ putStrLn $ "Node processes: "
+    lift $ putStrLn   "Node processes: "
     lift $ void     $ sequence $ putStr . show <$> procs
-    lift $ putStrLn $ "\nClient processes: "
+    lift $ putStrLn   "\nClient processes: "
     lift $ void     $ sequence $ putStr . show <$> clientProcs
     lift $ putStrLn $ "\nStopped node: " <> show (stoppedNode s)
 
@@ -477,7 +477,7 @@ execQueryClientCmd :: QueryNode -> StateT RunningEnvironment IO ()
 execQueryClientCmd = \case
   QueryAll clientCmd -> do
     s <- get
-    void . sequence $ (\nId -> execClientCmd nId clientCmd) <$> nodeId . processData <$> runningClientProcesses s
+    void . sequence $ (`execClientCmd` clientCmd) . nodeId . processData <$> runningClientProcesses s
   QueryOne nodeId clientCmd -> execClientCmd nodeId clientCmd
 
 execClientCmd :: NodeId -> ClientCmd -> StateT RunningEnvironment IO ()
@@ -498,7 +498,7 @@ runClientCmd :: NodeId -> String -> IO ()
 runClientCmd clientId s = let
   nc :: ProcessConfig () Handle ()
   nc = setStdin (byteStringInput (BSL.fromStrict $ BSC.pack s)) $ setStdout createPipe $ proc ncExec [(show . unNodeId) clientId]
-  in do
+  in
 
   withProcess_ nc $ \p -> do
       out <- hGetContents $ getStdout p

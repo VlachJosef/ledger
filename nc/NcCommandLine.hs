@@ -7,7 +7,7 @@ import Data.Semigroup ((<>))
 import Options.Applicative
 import Serokell.Communication.IPC
 
-data NcConfig = NcConfig
+newtype NcConfig = NcConfig
     { clientId :: NodeId
     }
 

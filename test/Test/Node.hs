@@ -18,7 +18,7 @@ testNodeConfig = NodeConfig (NodeId 1) 5 "./sockets" 1 1 1 ""
 main :: IO ()
 main =
     hspec $ do
-        describe "Node" $ do
+        describe "Node" $
             describe "addBlock" $ do
                 it "should return balance from Ledger" $
                     let tx = mkTransaction testPk testPk2 100
@@ -44,11 +44,11 @@ main =
                           ledger2 <- readMVar $ nodeLedger nodeState
                           ledger2 `shouldBe` ledgerOf [(testPk, 99950), (testPk2, 50)]
         describe "Base16" $ do
-            describe "encode" $ do
+            describe "encode" $
                 it "should encode ByteString" $ do
                     Base16.encode "foo" `shouldBe` "666f6f"
                     Base16.encode (unPublicKey testPk) `shouldBe` "db995fe25169d141cab9bbba92baa01f9f2e1ece7df4cb2ac05190f37fcc1f9d"
-            describe "decode" $ do
+            describe "decode" $
                 it "should decode ByteString" $ do
                     Base16.decode "666f6f"  `shouldBe` ("foo", "")
                     (PublicKey . fst . Base16.decode) "db995fe25169d141cab9bbba92baa01f9f2e1ece7df4cb2ac05190f37fcc1f9d" `shouldBe` testPk

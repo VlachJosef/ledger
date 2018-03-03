@@ -24,7 +24,7 @@ nodeConfigParser =
     (NodeId <$> argument auto (metavar "ID" <> help "Target for the greeting0")) <*>
     argument
         auto
-        ((metavar "NODE_COUNT") <> (help "number of nodes in the network")) <*>
+        (metavar "NODE_COUNT" <> help "number of nodes in the network") <*>
     strArgument
         (metavar "SOCKET_DIR" <> help "path to the directory with Unix sockets") <*>
     argument
@@ -43,7 +43,7 @@ nodeConfigParser =
 
 parseArguments :: ParserInfo NodeConfig
 parseArguments =
-    (info
-         (nodeConfigParser <**> helper)
-         (fullDesc <> progDesc "Distributed ledger node" <>
-          header "Distributed ledger node"))
+    info
+        (nodeConfigParser <**> helper)
+        (fullDesc <> progDesc "Distributed ledger node" <>
+         header "Distributed ledger node")

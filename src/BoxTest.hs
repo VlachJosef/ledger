@@ -16,7 +16,7 @@ boxData :: [[String]]
 boxData = [blockIds, txCount, timestamps]
 
 test1 :: [[String]] -> IO ()
-test1 rows = printBox $ hsep 2 left (map (vcat left . map text) (rows))
+test1 rows = printBox $ hsep 2 left (map (vcat left . map text) rows)
 
 box1 :: [Box]
 box1 = text <$> ["PPPPPPPPPPPPPPPPPPPP", "QQQQQQQQQQQQQQQQQQQQ"]

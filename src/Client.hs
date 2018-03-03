@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
 
@@ -51,7 +49,7 @@ toPossibleCmd bs =
         ["QUERY", txId]      -> (Cmd . QueryCmd . TransactionId) txId
         ["SUBMIT", address, amount] ->
             case DBC.fromByteString amount of
-                Nothing -> ErrorCmd ("Amount must be a number, got: " <> (BSC.unpack amount))
+                Nothing -> ErrorCmd ("Amount must be a number, got: " <> BSC.unpack amount)
                 Just n  -> Cmd $ TransferCmd (Address address) n
         []   -> EmptyCmd
         unknown -> UnknownCmd unknown
@@ -69,14 +67,14 @@ clientCmdToNodeExchange sk clientCmd =
 
 sendExchange :: NodeConversation -> NodeId -> ClientExchange -> IO ClientExchangeResponse
 sendExchange (NodeConversation Conversation {..}) nId exchange =
-    let encodedExchange = (BL.toStrict . encode . (ClientExchange nId)) exchange
+    let encodedExchange = (BL.toStrict . encode . ClientExchange nId) exchange
     in do resp <- send encodedExchange *> recvAll recv
           pure $ decodeClientExchangeResponse resp
 
 connect :: NodeId -> SecretKey -> NodeConversation -> Conversation -> IO Bool
-connect clientId sk nc (Conversation {..}) = do
+connect clientId sk nc Conversation {..} =
   True <$
-    forkIO ((logThread $ "Client " <> showNodeId clientId <> ". Forking new thread!") <* loop)
+    forkIO (logThread ("Client " <> showNodeId clientId <> ". Forking new thread!") <* loop)
   where
     sendNodeExchange = sendExchange nc clientId
     ccToNodeExchange = clientCmdToNodeExchange sk
@@ -119,5 +117,5 @@ response :: String -> S.ByteString
 response str = BL.toStrict (toByteString (str <> "\n"))
 
 connectClient :: NodeConversation -> ClientConfig -> SecretKey -> IO ()
-connectClient nc (ClientConfig {..}) sk = do
+connectClient nc ClientConfig {..} sk =
     listenUnixSocket "sockets" clientId (connect clientId sk nc)

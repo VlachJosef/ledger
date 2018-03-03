@@ -34,7 +34,7 @@ hash :: ByteString -> ByteString
 hash = encodeBase58 bitcoinAlphabet . BL.toStrict . SHA.bytestringDigest . SHA.sha256 . BL.fromStrict
 
 now :: IO Timestamp
-now = round <$> (* 1000000) <$> getPOSIXTime
+now = round . (* 1000000) <$> getPOSIXTime
 
 logThread :: String -> IO ()
 logThread msg = do
@@ -57,4 +57,4 @@ recvAll recv = loop "" where
       then loop (acc <> d)
       else do
         let resp = acc <> d
-        resp <$ (logThread $ "Recieved " <> show (BSC.length resp) <> " bytes of data.")
+        resp <$ logThread ("Recieved " <> show (BSC.length resp) <> " bytes of data.")

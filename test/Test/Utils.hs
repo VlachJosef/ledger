@@ -24,14 +24,13 @@ testPk2 :: PublicKey
 testPk2 = keysFactory "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
 
 emptyLedger :: Ledger
-emptyLedger = Ledger (Map.empty)
+emptyLedger = Ledger Map.empty
 
 addLedger :: (PublicKey, Int) -> Ledger -> Ledger
-addLedger (pk, amountToAdd) ledgerInitial =
+addLedger (pk, amountToAdd) =
     over
         Ledger
         (Map.insert (deriveAddress pk) amountToAdd)
-        ledgerInitial
 
 ledgerOf :: [(PublicKey, Int)] -> Ledger
 ledgerOf = foldr addLedger emptyLedger

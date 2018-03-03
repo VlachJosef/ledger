@@ -90,7 +90,7 @@ addReplaceBlock block nodeState blocks ledger =
           in if recievedBlockTimeStamp < currentBlockTimeStamp then
                case snd $ NEL.uncons blocks of
                 Just blocksTail -> addReplaceBlock block nodeState blocksTail (rewindBlock ledger currentBlock)
-                Nothing -> BlockNotAdded $ "Error. Cannot replace genesis block."
+                Nothing -> BlockNotAdded "Error. Cannot replace genesis block."
              else BlockNotAdded $ "Received block index " <> show recievedBlockId
               <> " with timestamp " <> show recievedBlockTimeStamp
               <> " newer than current block timestamp " <> show currentBlockTimeStamp

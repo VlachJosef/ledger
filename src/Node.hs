@@ -41,11 +41,11 @@ import System.Posix.Signals
 calculateNeighbours :: NodeConfig -> [NodeId]
 calculateNeighbours nodeConfig =
     let nId = (unNodeId . nodeId) nodeConfig
-    in NodeId <$> filter (\a -> a /= nId) [0 .. (nodeCount nodeConfig - 1)]
+    in NodeId <$> filter (/= nId) [0 .. (nodeCount nodeConfig - 1)]
 
 initialNodeState :: NodeConfig -> [(Address, Int)] -> IO NodeState
 initialNodeState nodeConfig initialDistribution = do
-    emptyBlockChain <- newMVar $ (genesisBlock initialDistribution) :| []
+    emptyBlockChain <- newMVar $ genesisBlock initialDistribution :| []
     emptyTransactionPool <- newMVar []
     ledger <- newMVar (Ledger (Map.fromList initialDistribution))
     chan <- newChan
@@ -64,7 +64,7 @@ mineblock nodeState = loop where
     loop = do
       threadDelay $ 15 * 1000 * 1000
       txs <- readMVar $ transactionPool nodeState
-      if null txs then logThread $ "No Transaction to mine." else mine txs
+      if null txs then logThread "No Transaction to mine." else mine txs
       loop
 
     mine :: [Transaction] -> IO ()
@@ -85,11 +85,11 @@ mineblock nodeState = loop where
 
 transactionInBlockchain :: Transaction -> BlockChain -> Bool
 transactionInBlockchain transaction blocks =
-  or $ (any (== transaction)) <$> transactions <$> blocks
+  or $ elem transaction . transactions <$> blocks
 
 transactionIdInBlockchain :: TransactionId -> BlockChain -> Bool
 transactionIdInBlockchain txId blocks =
-  or $ (any (== txId)) <$> (map transactionId) <$> transactions <$> blocks
+  or $ elem txId . map transactionId . transactions <$> blocks
 
 handleNodeExchange :: NodeState -> NodeExchange -> IO NodeExchangeResponse
 handleNodeExchange nodeState =
@@ -97,7 +97,7 @@ handleNodeExchange nodeState =
     AddTransaction tx -> do
       blocks <- readMVar $ blockchain nodeState
       txs <- readMVar $ transactionPool nodeState
-      let hasTx = any (\t -> t == tx) txs
+      let hasTx = tx `elem` txs
       if hasTx || transactionInBlockchain tx blocks
         then do logThread $ "Transaction already exists: " <> show tx
                 pure NodeNoResponse
@@ -107,7 +107,7 @@ handleNodeExchange nodeState =
                 (\transactions -> pure $ tx : transactions)
             logThread $ "Transaction " <> show tx
               <> " successsfully added to the poll and to the broadcast. Total number of transactions in pool: "
-              <> (show $ length txs + 1)
+              <> show (length txs + 1)
             writeChan (broadcastChannel nodeState) (TxBroadcast tx)
             pure NodeNoResponse
     QueryBlock n -> do
@@ -144,7 +144,7 @@ addBlock block nodeState = let
       pure Nothing
 
 reportProblems :: [LedgerError] -> IO ()
-reportProblems errors = sequence_ $ (logThread . show) <$> errors
+reportProblems errors = sequence_ $ logThread . show <$> errors
 
 txInfo :: Transaction -> [String]
 txInfo tx =
@@ -248,7 +248,7 @@ neighbourHandler nodeState broadcastChannel nId cc @ Conversation {..} = do
   logMessage msg = logThread $ "[Neighbour Handler " <> show nId  <> "] " <> msg
 
 encodeNodeExchange :: NodeId -> NodeExchange -> ByteString
-encodeNodeExchange nId = BSL.toStrict . encode . (NodeExchange nId)
+encodeNodeExchange nId = BSL.toStrict . encode . NodeExchange nId
 
 connectToNeighbour :: NodeState -> Chan Broadcast -> NodeId -> IO ()
 connectToNeighbour nodeState broadcastChan nodeId =
@@ -267,14 +267,14 @@ retry nodeState broadcastChan nodeId = let
     logThread $ "Connection to nodeId " <> nId <> " successful!!!"
   Left ex -> do
     logThread $ "Connection to nodeId " <> nId <> " failed: " <> show ex
-    logThread $ "Will attempt to reconnect in 10s."
+    logThread "Will attempt to reconnect in 10s."
     threadDelay $ 10 * 1000 * 1000
     logThread $ "Trying reestablish connection with nodeId " <> nId
     connectToNeighbour nodeState broadcastChan nodeId
 
 commu :: NodeState -> Conversation -> IO Bool
-commu nodeState conversation = do
-    True <$ forkIO ((logThread $ "Forking new thread!") <* loopMain nodeState)
+commu nodeState conversation =
+    True <$ forkIO (logThread "Forking new thread!" <* loopMain nodeState)
   where
     loopMain :: NodeState -> IO ()
     loopMain ns = loop
@@ -299,7 +299,7 @@ startMinerThread = void . forkIO . mineblock
 
 parseAddressAndAmount :: BSC.ByteString -> Maybe (Address, Int)
 parseAddressAndAmount bs = case BSC.words bs of
-  pk : amountAsStr : [] ->
+  [pk, amountAsStr] ->
     case DBC.fromByteString amountAsStr of
       Just n -> Just (Address pk, n)
       Nothing -> Nothing
@@ -332,8 +332,8 @@ establishClusterConnection nodeConfig = let
 
 connectToNeighbours :: NodeState -> IO [ThreadId]
 connectToNeighbours nodeState =
-    let nodeNeighbours = (neighbours nodeState)
-    in do sequence $
+    let nodeNeighbours = neighbours nodeState
+    in sequence $
               (\nId ->
                    forkIO
                        (do logMessage nId "Trying to establish connecting"
@@ -346,13 +346,13 @@ connectToNeighbours nodeState =
               in logThread $ msg <> " with node: " <> nId
 
 listenForClientConnection :: NodeState -> IO ()
-listenForClientConnection nodeState = do
+listenForClientConnection nodeState =
     listenUnixSocket "sockets" (fetchNodeId nodeState) (commu nodeState)
 
 terminationHandler :: NodeConfig -> Signal ->  Handler
 terminationHandler nodeConfig signal = CatchOnce $ do
     logThread $ "Caught " <> show signal <> " signal."
-    let socketFile = "sockets/" <> ((show . unNodeId . nodeId) nodeConfig) <> ".sock"
+    let socketFile = "sockets/" <> (show . unNodeId . nodeId) nodeConfig <> ".sock"
     fileExists <- doesFileExist socketFile
     if fileExists
       then do
