@@ -14,16 +14,28 @@ import qualified GHC.Generics as G
 import Time (Timestamp)
 
 data Transfer = Transfer
-    { from :: PublicKey
-    , to :: Address
+    { from   :: PublicKey
+    , to     :: Address
     , amount :: Int
     } deriving (Eq, G.Generic)
+
+data InitiateTransfer = InitiateTransfer
+    { itFrom   :: SecretKey
+    , itTo     :: PublicKey
+    , itAmount :: Int
+    } deriving Eq
 
 instance Show Transfer where
     show transfer =
            "from "     <> (show . deriveAddress . from) transfer
         <> ", to "     <> (show . to) transfer
         <> ", amount " <> (show . amount) transfer
+
+instance Show InitiateTransfer where
+    show InitiateTransfer{..} =
+           "from "     <> show itFrom
+        <> ", to "     <> show itTo
+        <> ", amount " <> show itAmount
 
 newtype TransactionId = TransactionId
     { unTransactionId :: ByteString

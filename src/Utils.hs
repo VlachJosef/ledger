@@ -1,11 +1,13 @@
 module Utils
     ( encodePublicKey
+    , decodePublicKey
     , encodeSignature
     , now
     , logThread
     , showNodeId
     , nextStep
     , recvAll
+    , hash
     ) where
 
 import Control.Concurrent (myThreadId)
@@ -14,6 +16,7 @@ import Crypto.Sign.Ed25519
 import Data.Semigroup
 import Data.ByteString (ByteString)
 import Data.ByteString.Base58
+import qualified Crypto.Hash.MD5 as MD5
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BL
@@ -30,8 +33,11 @@ encodeSignature = hash . unSignature
 encodePublicKey :: PublicKey -> ByteString
 encodePublicKey = Base16.encode . unPublicKey
 
+decodePublicKey :: ByteString -> PublicKey
+decodePublicKey = PublicKey . fst .Base16.decode
+
 hash :: ByteString -> ByteString
-hash = encodeBase58 bitcoinAlphabet . BL.toStrict . SHA.bytestringDigest . SHA.sha256 . BL.fromStrict
+hash = Base16.encode . MD5.hash
 
 now :: IO Timestamp
 now = round . (* 1000000) <$> getPOSIXTime

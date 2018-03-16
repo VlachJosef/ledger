@@ -45,10 +45,10 @@ dummyTimestamp :: Timestamp
 dummyTimestamp = 0
 
 mkTransaction :: PublicKey -> PublicKey -> Balance -> Transaction
-mkTransaction fromPk toPk bal =
+mkTransaction fromPk itTo bal =
     Transaction dummyTxId testTransfer dummySignature dummyTimestamp
   where
-    testTransfer = Transfer fromPk (deriveAddress toPk) bal
+    testTransfer = Transfer fromPk (deriveAddress itTo) bal
 
 emptyBlock :: Block
 emptyBlock = mkBlock []

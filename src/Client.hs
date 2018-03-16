@@ -27,15 +27,16 @@ data PossibleCmd
     | EmptyCmd
     | UnknownCmd [BSC.ByteString]
     | ErrorCmd String
-    deriving (Show)
+    deriving Show
 
+-- | CLI -> Client commands
 data ClientCmd
     = StatusCmd
     | BalanceCmd Address
     | QueryCmd TransactionId
-    | TransferCmd Address
+    | TransferCmd PublicKey
                   Int
-    deriving (Show)
+    deriving Show
 
 newtype NodeConversation = NodeConversation
     { unNodeConversation :: Conversation
@@ -44,39 +45,52 @@ newtype NodeConversation = NodeConversation
 toPossibleCmd :: S.ByteString -> PossibleCmd
 toPossibleCmd bs =
     case BSC.words bs of
-        ["status"]           ->  Cmd StatusCmd
-        ["BALANCE", address] -> (Cmd . BalanceCmd . Address) address
-        ["QUERY", txId]      -> (Cmd . QueryCmd . TransactionId) txId
+        ["status"]                  -> Cmd StatusCmd
+        ["BALANCE", address]        -> (Cmd . BalanceCmd . Address) address
+        ["QUERY", txId]             -> (Cmd . QueryCmd . TransactionId) txId
         ["SUBMIT", address, amount] ->
-            case DBC.fromByteString amount of
-                Nothing -> ErrorCmd ("Amount must be a number, got: " <> BSC.unpack amount)
-                Just n  -> Cmd $ TransferCmd (Address address) n
-        []   -> EmptyCmd
+          case DBC.fromByteString amount of
+            Nothing -> ErrorCmd ("Amount must be a number, got: " <> BSC.unpack amount)
+            Just n  -> Cmd $ TransferCmd (decodePublicKey address) n
+        []      -> EmptyCmd
         unknown -> UnknownCmd unknown
 
-clientCmdToNodeExchange :: SecretKey -> ClientCmd -> ClientExchange
+clientCmdToNodeExchange :: SecretKey -> ClientCmd -> Either ClientExchangeCLI ClientExchange
 clientCmdToNodeExchange sk clientCmd =
     case clientCmd of
-        StatusCmd          -> FetchStatus
-        BalanceCmd address -> AskBalance address
-        QueryCmd txId      -> Query txId
-        TransferCmd address amount ->
-            let transfer  = Transfer (toPublicKey sk) address amount
-                transferSignature = dsign sk (encodeTransfer transfer)
-            in MakeTransfer transfer transferSignature
+        StatusCmd             -> Left FetchStatus
+        BalanceCmd address    -> Left $ AskBalanceByAddress address
+        QueryCmd txId         -> Right $ Query txId
+        TransferCmd pk amount -> Right $ MakeTransfer $ InitiateTransfer sk pk amount
 
-sendExchange :: NodeConversation -> NodeId -> ClientExchange -> IO ClientExchangeResponse
-sendExchange (NodeConversation Conversation {..}) nId exchange =
-    let encodedExchange = (BL.toStrict . encode . ClientExchange nId) exchange
-    in do resp <- send encodedExchange *> recvAll recv
-          pure $ decodeClientExchangeResponse resp
+sendEitherExchange :: NodeConversation -> Either ClientExchangeCLI ClientExchange -> IO (Either ClientExchangeCLIResponse ClientExchangeResponse)
+sendEitherExchange nc (Left a)  = Left  <$> sendExchangeCLI nc a
+sendEitherExchange nc (Right a) = Right <$> sendExchange nc a
+
+sendExchange :: NodeConversation -> ClientExchange -> IO ClientExchangeResponse
+sendExchange (NodeConversation Conversation {..}) exchange =
+    case exchange of
+       MakeTransfer _ -> sendAndProcessRespBy (runGetStrict encodeMakeTransferResp)
+       Query _        -> sendAndProcessRespBy (runGetStrict encodeQueryResp)
+       AskBalance _   -> sendAndProcessRespBy (runGetStrict encodeBalanceResp)
+    where
+      encodedExchange = (BL.toStrict . encode . ClientExchange) exchange
+      sendAndProcessRespBy respDecoder = do resp <- send encodedExchange *> recvAll recv
+                                            pure $ respDecoder resp
+sendExchangeCLI :: NodeConversation -> ClientExchangeCLI -> IO ClientExchangeCLIResponse
+sendExchangeCLI (NodeConversation Conversation {..}) exchange =
+  let encodedExchangeCLI = (BL.toStrict . encode . ClientExchangeCLI) exchange
+  in do resp <- send encodedExchangeCLI *> recvAll recv
+        case decodeClientExchangeCLIResponse resp of
+          Right (_, _, res) -> pure res
+          Left _ -> error "Decoding of ClientExchangeCLIResponse failed"
 
 connect :: NodeId -> SecretKey -> NodeConversation -> Conversation -> IO Bool
 connect clientId sk nc Conversation {..} =
   True <$
     forkIO (logThread ("Client " <> showNodeId clientId <> ". Forking new thread!") <* loop)
   where
-    sendNodeExchange = sendExchange nc clientId
+    sendNodeExchange = sendEitherExchange nc
     ccToNodeExchange = clientCmdToNodeExchange sk
     sendResponse = send . response
     loop :: IO ()
@@ -93,15 +107,15 @@ connect clientId sk nc Conversation {..} =
             EmptyCmd -> pure ()
         nextStep (BSC.unpack input) loop
 
-showExchangeResponse :: Address -> ClientExchangeResponse -> String
+showExchangeResponse :: Address -> Either ClientExchangeCLIResponse ClientExchangeResponse -> String
 showExchangeResponse address =
     \case
-        StringResp message              -> message
-        SubmitResp (Just transactionId) -> show transactionId
-        SubmitResp Nothing              -> "Transaction has not been accepted"
-        BalanceResp balance             -> show balance
-        QueryResp wasAdded              -> show wasAdded
-        StatusInfo nodeInfo             -> prettyPrintStatusInfo address nodeInfo
+        Right (SubmitResp (Just transactionId)) -> show transactionId
+        Right (SubmitResp Nothing)              -> "Transaction has not been accepted"
+        Right (BalanceResp balance)             -> show balance
+        Right (QueryResp wasAdded)              -> show wasAdded
+        Left (StatusInfo nodeInfo)              -> prettyPrintStatusInfo address nodeInfo
+        Left (BalanceRespCLI balance)           -> show balance
 
 prettyPrintStatusInfo :: Address ->NodeInfo -> String
 prettyPrintStatusInfo address NodeInfo {..} =

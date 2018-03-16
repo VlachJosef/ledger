@@ -16,13 +16,14 @@ import Block
 import Control.Concurrent
 import Control.Exception (try, IOException)
 import Control.Logging
-import Crypto.Sign.Ed25519 (Signature)
+import Crypto.Sign.Ed25519 (Signature, dsign, toPublicKey)
 import Data.Binary (encode)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Conversion as DBC
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Map.Strict as Map
+import Data.Maybe (fromMaybe)
 import Data.List as List
 import Data.List.NonEmpty( NonEmpty( (:|) ), (<|) )
 import qualified Data.List.NonEmpty as NEL
@@ -62,7 +63,7 @@ mineblock :: NodeState -> IO ()
 mineblock nodeState = loop where
 
     loop = do
-      threadDelay $ 15 * 1000 * 1000
+      threadDelay . (100*) . stabilityTimeout . nodeConfig $ nodeState
       txs <- readMVar $ transactionPool nodeState
       if null txs then logThread "No Transaction to mine." else mine txs
       loop
@@ -188,31 +189,39 @@ handleClientExchange :: NodeState
                      -> IO ClientExchangeResponse
 handleClientExchange nodeState =
   \case
-    MakeTransfer transfer signature ->
-      if verifyTransfer signature transfer
-        then do
-          logThread $ "Signature verified " <> show transfer
-          timestamp <- now
-          let transactionId = createTransaction signature
-          let tx = Transaction transactionId transfer signature timestamp
-          _ <- handleNodeExchange nodeState (AddTransaction tx)
-          pure $ SubmitResp $ Just transactionId
-        else pure $ SubmitResp Nothing
+    MakeTransfer InitiateTransfer{..} ->
+      let
+        transfer      = Transfer (toPublicKey itFrom) (deriveAddress itTo) itAmount
+        signature     = dsign itFrom (encodeTransfer transfer)
+        transactionId = createTransaction signature
+      in do
+        timestamp <- now
+        let tx = Transaction transactionId transfer signature timestamp
+        void $ handleNodeExchange nodeState (AddTransaction tx)
+        pure $ SubmitResp $ Just transactionId
 
-    AskBalance address -> do
-      Ledger ledger <- readMVar (nodeLedger nodeState)
-      pure $ case Map.lookup address ledger of
-        Nothing -> StringResp $ "Balance error, unknown address: " <> show address
-        Just bal -> BalanceResp bal
+    AskBalance pk -> askBalance nodeState BalanceResp . deriveAddress $ pk
 
     Query txId -> do
       blocks <- readMVar (blockchain nodeState)
       let wasAdded = transactionIdInBlockchain txId blocks
       pure $ QueryResp wasAdded
 
+handleClientExchangeCLI :: NodeState
+                        -> ClientExchangeCLI
+                        -> IO ClientExchangeCLIResponse
+handleClientExchangeCLI nodeState =
+  \case
+    AskBalanceByAddress address -> askBalance nodeState BalanceRespCLI address
+
     FetchStatus -> do
       nodeInfo <- nodeStatus nodeState
       pure $ StatusInfo nodeInfo
+
+askBalance :: NodeState -> (Int -> a) -> Address -> IO a
+askBalance nodeState f address = do
+   Ledger ledger <- readMVar (nodeLedger nodeState)
+   pure . f $ fromMaybe 0 $ Map.lookup address ledger
 
 broadcastToExchange :: Broadcast -> NodeExchange
 broadcastToExchange = \case
@@ -224,11 +233,11 @@ synchonizeBlockChain nodeState idx cc @ Conversation {..} nId = do
   logMessage $ "Asking for block " <> show idx
   response <- send (encodeNodeExchange (fetchNodeId nodeState) (QueryBlock idx)) *> recvAll recv
   case decodeNodeExchangeResponse response of
-    BlockResponse (Just block) -> do
+    Right (_, _, BlockResponse (Just block)) -> do
       logMessage $ "Block number " <> show idx <> " received. Adding it to blockchain"
       _ <- addBlock block nodeState
       synchonizeBlockChain nodeState (nextIndex idx) cc nId
-    BlockResponse Nothing -> logMessage $ "Block number " <> show idx <> " don't received. Synchronization complete."
+    Right (_, _, BlockResponse Nothing) -> logMessage $ "Block number " <> show idx <> " don't received. Synchronization complete."
     other -> logMessage $ "Error: Expected BlockResponse got: " <> show other
     where
       logMessage msg = logThread $ "[Synchronizing " <> show nId  <> "] " <> msg
@@ -267,8 +276,8 @@ retry nodeState broadcastChan nodeId = let
     logThread $ "Connection to nodeId " <> nId <> " successful!!!"
   Left ex -> do
     logThread $ "Connection to nodeId " <> nId <> " failed: " <> show ex
-    logThread "Will attempt to reconnect in 10s."
-    threadDelay $ 10 * 1000 * 1000
+    logThread "Will attempt to reconnect in 100ms."
+    threadDelay $ 100 * 1000
     logThread $ "Trying reestablish connection with nodeId " <> nId
     connectToNeighbour nodeState broadcastChan nodeId
 
@@ -282,17 +291,22 @@ commu nodeState conversation =
         loop :: IO ()
         loop = do
             input <- recvAll (recv conversation)
-            let exchange = decodeExchange input
-            logThread $ "[Main handler] Received: " <> show exchange
-            exchangeResponse <-
-                case exchange of
-                    NodeExchange _ nodeExchange ->
-                       encode <$> handleNodeExchange ns nodeExchange
-                    ClientExchange _ clientNodeExchange ->
-                       encode <$> handleClientExchange ns clientNodeExchange
-
-            send conversation (BSL.toStrict exchangeResponse)
-            nextStep (BSC.unpack input) loop
+            if null (BSC.unpack input)
+              then loop
+              else do
+                let exchange = decodeExchange input
+                logThread $ "[Main handler] Received: " <> show exchange
+                exchangeResponse <-
+                    case exchange of
+                        Right (_, _, NodeExchange _ nodeExchange) ->
+                           encode <$> handleNodeExchange ns nodeExchange
+                        Right (_, _, ClientExchange clientNodeExchange) ->
+                           BSL.fromStrict . runPutStrict . decodeSubmitResp <$> handleClientExchange ns clientNodeExchange
+                        Right (_, _, ClientExchangeCLI clientNodeExchangeCLI) ->
+                          encode <$> handleClientExchangeCLI ns clientNodeExchangeCLI
+                        Left (bytestring, offset, errorMessage) -> error $ "UPS, Something broke: " <> show errorMessage <> ", offset: " <> show offset <> ", payload: " <> show bytestring
+                send conversation (BSL.toStrict exchangeResponse)
+                nextStep (BSC.unpack input) loop
 
 startMinerThread :: NodeState -> IO ()
 startMinerThread = void . forkIO . mineblock

@@ -29,6 +29,7 @@ dependencies:
 - optparse-applicative
 - binary
 - base58-bytestring
+- cryptohash-md5
 - SHA
 - containers
 - bytestring-conversion
