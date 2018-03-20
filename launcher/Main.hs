@@ -28,7 +28,7 @@ import Text.ParserCombinators.Parsec.Char
 import Text.ParserCombinators.Parsec.Combinator
 
 binDir     :: FilePath
-binDir      = "./.stack-work/install/x86_64-osx/lts-10.3/8.2.2/bin/"
+binDir      = "./.stack-work/install/x86_64-osx/lts-11.1/8.2.2/bin/"
 genExec    :: FilePath
 genExec     = binDir <> "crypto-ledger-keys-generator"
 ncExec     :: FilePath
@@ -315,7 +315,7 @@ runNodes :: [ProcessData] -> IO [RunningProcess]
 runNodes xs = sequence $ runNode <$> xs
 
 prepareNodes :: Int -> [ProcessData]
-prepareNodes n = [ ProcessData (NodeId i) (proc nodeExec [show i, show n, "sockets", "1000", "1000", "1000", "Distribution.keys"])
+prepareNodes n = [ ProcessData (NodeId i) (proc nodeExec [show i, show n, "sockets", "1000ms", "1000ms", "1000ms", "Distribution.keys"])
      | i <- [0 .. (n - 1)]
      ]
 

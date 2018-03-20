@@ -7,14 +7,15 @@ import Data.Semigroup ((<>))
 import Options.Applicative
 import OrphanedShow
 import Serokell.Communication.IPC
+import Time.Units (Millisecond, Time)
 
 data NodeConfig = NodeConfig
     { nodeId :: NodeId
     , nodeCount :: Int
     , socketDir :: String
-    , disconnectTimeout :: Int
-    , stabilityTimeout :: Int
-    , resyncTimeout :: Int
+    , disconnectTimeout :: Time Millisecond
+    , stabilityTimeout :: Time Millisecond
+    , resyncTimeout :: Time Millisecond
     , distributionFile :: FilePath
     } deriving (Show)
 

@@ -1,6 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Node
     ( establishClusterConnection
@@ -13,7 +14,7 @@ import Node.Internal
 import Address
 import Data.Functor
 import Block
-import Control.Concurrent
+import Control.Concurrent (Chan, ThreadId, dupChan, forkIO, modifyMVar_, newChan, newMVar, putMVar, readChan, readMVar, takeMVar, writeChan)
 import Control.Exception (try, IOException)
 import Control.Logging
 import Crypto.Sign.Ed25519 (Signature, dsign, toPublicKey)
@@ -38,6 +39,7 @@ import Transaction
 import Text.PrettyPrint.Boxes as Boxes (render, vcat, hsep, left, text)
 import Node.Data
 import System.Posix.Signals
+import Time.Units (Millisecond, Time, threadDelay, toNum, ms)
 
 calculateNeighbours :: NodeConfig -> [NodeId]
 calculateNeighbours nodeConfig =
@@ -62,8 +64,11 @@ initialNodeState nodeConfig initialDistribution = do
 mineblock :: NodeState -> IO ()
 mineblock nodeState = loop where
 
+    miningDelay :: Time Millisecond
+    miningDelay = ms . fromIntegral . (`div` 10) . toNum @Millisecond . stabilityTimeout . nodeConfig $ nodeState
+
     loop = do
-      threadDelay . (100*) . stabilityTimeout . nodeConfig $ nodeState
+      threadDelay miningDelay
       txs <- readMVar $ transactionPool nodeState
       if null txs then logThread "No Transaction to mine." else mine txs
       loop
@@ -229,7 +234,7 @@ broadcastToExchange = \case
   BlockBroadcast block -> AddBlock block
 
 synchonizeBlockChain :: NodeState -> Index -> Conversation -> NodeId -> IO ()
-synchonizeBlockChain nodeState idx cc @ Conversation {..} nId = do
+synchonizeBlockChain nodeState idx cc@Conversation {..} nId = do
   logMessage $ "Asking for block " <> show idx
   response <- send (encodeNodeExchange (fetchNodeId nodeState) (QueryBlock idx)) *> recvAll recv
   case decodeNodeExchangeResponse response of
@@ -243,7 +248,7 @@ synchonizeBlockChain nodeState idx cc @ Conversation {..} nId = do
       logMessage msg = logThread $ "[Synchronizing " <> show nId  <> "] " <> msg
 
 neighbourHandler :: NodeState -> Chan Broadcast -> NodeId -> Conversation -> IO ()
-neighbourHandler nodeState broadcastChannel nId cc @ Conversation {..} = do
+neighbourHandler nodeState broadcastChannel nId cc@Conversation {..} = do
   blocks <- readMVar (blockchain nodeState)
   synchonizeBlockChain nodeState (nextIndex . Index $ List.length blocks) cc nId
   loop where
@@ -277,7 +282,7 @@ retry nodeState broadcastChan nodeId = let
   Left ex -> do
     logThread $ "Connection to nodeId " <> nId <> " failed: " <> show ex
     logThread "Will attempt to reconnect in 100ms."
-    threadDelay $ 100 * 1000
+    threadDelay @Millisecond 100
     logThread $ "Trying reestablish connection with nodeId " <> nId
     connectToNeighbour nodeState broadcastChan nodeId
 

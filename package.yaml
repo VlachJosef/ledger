@@ -44,6 +44,7 @@ dependencies:
 - unix
 - filepath
 - parsec
+- o-clock
 
 library:
   source-dirs: src

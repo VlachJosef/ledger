@@ -4,7 +4,6 @@ import Address
 import Client
 import ClientCommandLine
 import Control.Exception (catch, IOException)
-import Control.Concurrent (threadDelay)
 import Control.Logging
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString as BS
@@ -16,6 +15,7 @@ import Options.Applicative
 import Serokell.Communication.IPC
 import System.Directory (doesFileExist, removeFile)
 import System.Posix.Signals
+import Time.Units (sec, threadDelay)
 import Utils
 
 main :: IO ()
@@ -60,12 +60,14 @@ connectToNode clientConfig sk = loop where
 
   resolve :: IOException -> IO ()
   resolve ex = do
-    putStrLn $ "Client error: " <> show ex
-    threadDelay $ 1000 * 1000
+    putStrLn $ "Client error: " <> show ex <> ", will retry in " <> show retryTimeout
+    threadDelay retryTimeout
     putStrLn $ "Retrying connection to " <> (show . nodeId) clientConfig <> " node."
     loop
 
   connect = connectToUnixSocket "sockets" (nodeId clientConfig) (connectNode clientConfig sk)
+
+  retryTimeout = sec 1
 
 connectNode :: ClientConfig -> SecretKey -> Conversation -> IO ()
 connectNode clientConfig sk conversation = let
