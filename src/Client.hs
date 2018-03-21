@@ -24,7 +24,6 @@ import Utils
 
 data PossibleCmd
     = Cmd ClientCmd
-    | EmptyCmd
     | UnknownCmd [BSC.ByteString]
     | ErrorCmd String
     deriving Show
@@ -52,7 +51,6 @@ toPossibleCmd bs =
           case DBC.fromByteString amount of
             Nothing -> ErrorCmd ("Amount must be a number, got: " <> BSC.unpack amount)
             Just n  -> Cmd $ TransferCmd (decodePublicKey address) n
-        []      -> EmptyCmd
         unknown -> UnknownCmd unknown
 
 clientCmdToNodeExchange :: SecretKey -> ClientCmd -> Either ClientExchangeCLI ClientExchange
@@ -96,16 +94,18 @@ connect clientId sk nc Conversation {..} =
     loop :: IO ()
     loop = do
         input <- recv
-        let possibleCmd = toPossibleCmd input
-        logThread $ "Command received: " <> show possibleCmd
-        case possibleCmd of
-            Cmd clientCmd -> do
-                exchangeResp <- (sendNodeExchange . ccToNodeExchange) clientCmd
-                sendResponse $ showExchangeResponse (deriveAddress $ toPublicKey sk) exchangeResp
-            ErrorCmd err -> sendResponse err
-            UnknownCmd unknown -> sendResponse $ "Unknown command: " <> show unknown
-            EmptyCmd -> pure ()
-        nextStep (BSC.unpack input) loop
+        if null (BSC.unpack input)
+          then logThread "Closed by peer!!!"
+          else do
+            let possibleCmd = toPossibleCmd input
+            logThread $ "Command received: " <> show possibleCmd
+            case possibleCmd of
+                Cmd clientCmd -> do
+                    exchangeResp <- (sendNodeExchange . ccToNodeExchange) clientCmd
+                    sendResponse $ showExchangeResponse (deriveAddress $ toPublicKey sk) exchangeResp
+                ErrorCmd err -> sendResponse err
+                UnknownCmd unknown -> sendResponse $ "Unknown command: " <> show unknown
+            loop
 
 showExchangeResponse :: Address -> Either ClientExchangeCLIResponse ClientExchangeResponse -> String
 showExchangeResponse address =

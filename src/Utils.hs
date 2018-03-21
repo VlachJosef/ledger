@@ -5,7 +5,6 @@ module Utils
     , now
     , logThread
     , showNodeId
-    , nextStep
     , recvAll
     , hash
     ) where
@@ -49,10 +48,6 @@ logThread msg = do
 
 showNodeId :: NodeId -> String
 showNodeId = show . unNodeId
-
-nextStep :: String -> IO () -> IO ()
-nextStep "" _ = putStrLn "Closed by peer!"
-nextStep _ io = io
 
 recvAll :: IO ByteString -> IO ByteString
 recvAll recv = loop "" where

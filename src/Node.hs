@@ -297,7 +297,7 @@ commu nodeState conversation =
         loop = do
             input <- recvAll (recv conversation)
             if null (BSC.unpack input)
-              then loop
+              then logThread "Closed by peer!!!"
               else do
                 let exchange = decodeExchange input
                 logThread $ "[Main handler] Received: " <> show exchange
@@ -311,7 +311,7 @@ commu nodeState conversation =
                           encode <$> handleClientExchangeCLI ns clientNodeExchangeCLI
                         Left (bytestring, offset, errorMessage) -> error $ "UPS, Something broke: " <> show errorMessage <> ", offset: " <> show offset <> ", payload: " <> show bytestring
                 send conversation (BSL.toStrict exchangeResponse)
-                nextStep (BSC.unpack input) loop
+                loop
 
 startMinerThread :: NodeState -> IO ()
 startMinerThread = void . forkIO . mineblock
