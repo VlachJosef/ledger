@@ -17,7 +17,9 @@ import Control.Concurrent.QSem
 import Control.Exception.Safe (bracket, bracket_)
 import Control.Monad (when)
 import Data.Binary (Binary)
-import Data.ByteString (ByteString)
+import Data.ByteString (ByteString, empty)
+import Data.Foldable
+import System.Directory
 import System.Environment (lookupEnv)
 import System.FilePath ((<.>), (</>))
 import System.IO.Unsafe (unsafePerformIO)
@@ -64,14 +66,19 @@ sendDelay = unsafePerformIO $ readEnv "SRK_SOCK_DELAY"
 withQSem :: QSem -> IO a -> IO a
 withQSem qsem = bracket_ (waitQSem qsem) (signalQSem qsem)
 
-outboundSendRecv :: Net.Socket -> Conversation
-outboundSendRecv socket = Conversation outSend (recvSock socket)
+outboundSendRecv :: FilePath -> Net.Socket -> Conversation
+outboundSendRecv socketPath socket = Conversation outSend (recvSock socketPath socket)
   where
     outSend :: Send
     outSend data_ =
         (maybe id withQSem) sendSem $ do
-            _ <- traverse msDelay sendDelay
-            sendDo data_
+            permission <- getPermissions socketPath
+            if executable permission
+              then do
+                traverse_ msDelay sendDelay
+                sendDo data_
+              else pure ()
+
     sendDo = sendSock socket
     msDelay :: Int -> IO ()
     msDelay milliseconds = threadDelay $ milliseconds * 10 ^ (3 :: Int)
@@ -79,13 +86,17 @@ outboundSendRecv socket = Conversation outSend (recvSock socket)
 sendSock :: Net.Socket -> Send
 sendSock conn = NetByte.sendAll conn
 
-recvSock :: Net.Socket -> Recv
-recvSock conn = NetByte.recv conn 4096
+recvSock :: FilePath -> Net.Socket -> Recv
+recvSock fp conn = do
+  permission <- getPermissions fp
+  if executable permission
+    then NetByte.recv conn 4096
+    else pure empty
 
-acceptServerSock :: Net.Socket -> IO Conversation
-acceptServerSock socket = do
+acceptServerSock :: FilePath -> Net.Socket -> IO Conversation
+acceptServerSock fp socket = do
     (conn, _) <- Net.accept socket
-    return $ Conversation (sendSock conn) (recvSock conn)
+    return $ Conversation (sendSock conn) (recvSock fp conn)
 
 -- Creates socket using provided allocator and handles all exceptions using bracket function.
 initializeSocket :: IO Net.Socket -> (Net.Socket -> IO ()) -> IO ()
@@ -100,12 +111,12 @@ listenUnixSocket :: SocketDirectory
 listenUnixSocket socketDirectory (NodeId nodeId) handler =
     initializeSocket allocator acceptLoop
   where
+    socketPath = socketDirectory </> show nodeId <.> "sock"
     acceptLoop socket =
-        acceptServerSock socket >>= handler >>= flip when (acceptLoop socket)
+        acceptServerSock socketPath socket >>= handler >>= flip when (acceptLoop socket)
     allocator :: IO Net.Socket
     allocator = do
         socket <- Net.socket Net.AF_UNIX Net.Stream Net.defaultProtocol
-        let socketPath = socketDirectory </> show nodeId <.> "sock"
         Net.bind socket $ Net.SockAddrUnix socketPath
         Net.listen socket 5
         return socket
@@ -116,11 +127,12 @@ connectToUnixSocket :: SocketDirectory
                     -> (Conversation -> IO ())
                     -> IO ()
 connectToUnixSocket socketDirectory (NodeId nodeId) handler =
-    initializeSocket allocator (handler . outboundSendRecv)
+    initializeSocket allocator (handler . outboundSendRecv socketPath)
   where
+    socketPath = socketDirectory </> show nodeId <.> "sock"
+
     allocator :: IO Net.Socket
     allocator = do
         socket <- Net.socket Net.AF_UNIX Net.Stream Net.defaultProtocol
-        let socketPath = socketDirectory </> show nodeId <.> "sock"
         Net.connect socket $ Net.SockAddrUnix socketPath
         return socket
