@@ -21,6 +21,7 @@ library
   build-depends:       base >= 4.9 && < 5
                      , binary
                      , bytestring
+                     , directory
                      , filepath
                      , network
                      , safe-exceptions
