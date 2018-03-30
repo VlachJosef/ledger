@@ -3,15 +3,15 @@
 module Main where
 
 import           Crypto.Sign.Ed25519
-import qualified Data.ByteString.Char8  as BSC
 import qualified Data.ByteString.Base16 as Base16
+import qualified Data.ByteString.Char8  as BSC
 import           Data.Functor
 import           Data.Monoid
 import           KeysGenCommandLine
 import           Options.Applicative
 import           System.Directory
+import           System.FilePath        ((</>))
 import           System.Random
-import           System.FilePath ((</>))
 import           Text.Printf
 
 main :: IO ()

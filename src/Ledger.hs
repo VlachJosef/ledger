@@ -2,12 +2,12 @@
 
 module Ledger where
 
-import Address
-import Control.Newtype
-import Data.Map (Map)
+import           Address
+import           Control.Newtype
+import           Data.Map        (Map)
 import qualified Data.Map.Strict as Map
-import Data.Semigroup
-import GHC.Generics
+import           Data.Semigroup
+import           GHC.Generics
 
 data LedgerError
     = AddressNotFound Address

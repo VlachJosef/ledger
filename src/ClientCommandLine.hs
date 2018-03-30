@@ -3,11 +3,11 @@ module ClientCommandLine
     , parseArguments
     ) where
 
-import Data.Maybe (fromMaybe)
-import Data.Semigroup ((<>))
-import Options.Applicative
-import OrphanedShow
-import Serokell.Communication.IPC
+import           Data.Maybe                 (fromMaybe)
+import           Data.Semigroup             ((<>))
+import           Options.Applicative
+import           OrphanedShow
+import           Serokell.Communication.IPC
 
 data ClientConfig = ClientConfig
     { clientId   :: NodeId

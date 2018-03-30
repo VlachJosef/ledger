@@ -3,9 +3,9 @@ module NcCommandLine
     , parseArguments
     ) where
 
-import Data.Semigroup ((<>))
-import Options.Applicative
-import Serokell.Communication.IPC
+import           Data.Semigroup             ((<>))
+import           Options.Applicative
+import           Serokell.Communication.IPC
 
 newtype NcConfig = NcConfig
     { clientId :: NodeId

@@ -1,31 +1,31 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Main where
 
-import Control.Applicative
-import Control.Concurrent
-import GHC.IO.Exception
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.ByteString.Conversion as DBC
-import System.Process.Typed
-import Data.Semigroup ((<>))
-import Data.Maybe (fromMaybe)
-import Control.Monad.State.Strict
-import Serokell.Communication.IPC (NodeId(..))
-import System.IO
-import Data.List
-import System.Console.Haskeline
-import System.Console.Haskeline.History
-import System.Directory
-import Data.Either.Validation
-import Control.Exception
-import System.FilePath ((</>), takeExtension)
-import qualified Text.Parsec as Parsec
-import Text.ParserCombinators.Parsec.Char
-import Text.ParserCombinators.Parsec.Combinator
+import           Control.Applicative
+import           Control.Concurrent
+import           Control.Exception
+import           Control.Monad.State.Strict
+import qualified Data.ByteString.Char8                    as BSC
+import qualified Data.ByteString.Conversion               as DBC
+import qualified Data.ByteString.Lazy                     as BSL
+import           Data.Either.Validation
+import           Data.List
+import           Data.Maybe                               (fromMaybe)
+import           Data.Semigroup                           ((<>))
+import           GHC.IO.Exception
+import           Serokell.Communication.IPC               (NodeId (..))
+import           System.Console.Haskeline
+import           System.Console.Haskeline.History
+import           System.Directory
+import           System.FilePath                          (takeExtension, (</>))
+import           System.IO
+import           System.Process.Typed
+import qualified Text.Parsec                              as Parsec
+import           Text.ParserCombinators.Parsec.Char
+import           Text.ParserCombinators.Parsec.Combinator
 
 binDir     :: FilePath
 binDir      = "./.stack-work/install/x86_64-osx/lts-11.1/8.2.2/bin/"
@@ -57,7 +57,7 @@ pattern All       :: String
 pattern All       = "all"
 
 data CommandInfo
-  = CommandInfo { command :: String
+  = CommandInfo { command    :: String
                 , takeParams :: Bool
                 }
 
@@ -98,7 +98,7 @@ pIntPositive = do
   digits <- pDigits
   case validNumber digits of
     Failure errors -> Parsec.parserFail (unwords errors)
-    Success n -> pure n
+    Success n      -> pure n
 
 pNodeId :: Parsec.Parsec String () NodeId
 pNodeId = NodeId <$> pIntPositive
@@ -272,12 +272,12 @@ main = do
                  loop
 
 data ProcessData
-  = ProcessData { nodeId :: NodeId
+  = ProcessData { nodeId        :: NodeId
                 , processConfig :: ProcessConfig () () ()
                 } deriving (Show)
 
 data RunningProcess
-  = RunningProcess { processData :: ProcessData
+  = RunningProcess { processData    :: ProcessData
                    , runningProcess :: Process () () ()
                    }
 
@@ -288,10 +288,10 @@ instance Show NodeId where
   show (NodeId nId) = show nId
 
 data RunningEnvironment =
-  EnvData { runningProcesses :: [RunningProcess]
+  EnvData { runningProcesses       :: [RunningProcess]
           , runningClientProcesses :: [RunningProcess]
-          , stoppedNode :: Maybe (ProcessData, ProcessData) -- stopped Node and associated client
-          , script :: [String]
+          , stoppedNode            :: Maybe (ProcessData, ProcessData) -- stopped Node and associated client
+          , script                 :: [String]
           }
 
 parseCmd :: String -> Cmd
@@ -299,7 +299,7 @@ parseCmd s = if null s
                then EmptyCmd
                else case Parsec.parse pCmd sourceName s of
                       Left errors -> InvalidCmd s errors
-                      Right cmd -> cmd
+                      Right cmd   -> cmd
 
 validNumber :: String -> Validation [String] Int
 validNumber s = case DBC.fromByteString (BSC.pack s) of

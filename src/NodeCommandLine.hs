@@ -5,20 +5,20 @@ module NodeCommandLine
     , parseArguments
     ) where
 
-import Data.Semigroup ((<>))
-import Options.Applicative
-import OrphanedShow
-import Serokell.Communication.IPC
-import Time.Units (Millisecond, Time, ms)
+import           Data.Semigroup             ((<>))
+import           Options.Applicative
+import           OrphanedShow
+import           Serokell.Communication.IPC
+import           Time.Units                 (Millisecond, Time, ms)
 
 data NodeConfig = NodeConfig
-    { nodeId :: NodeId
-    , nodeCount :: Int
-    , socketDir :: String
+    { nodeId            :: NodeId
+    , nodeCount         :: Int
+    , socketDir         :: String
     , disconnectTimeout :: Time Millisecond
-    , stabilityTimeout :: Time Millisecond
-    , resyncTimeout :: Time Millisecond
-    , distributionFile :: FilePath
+    , stabilityTimeout  :: Time Millisecond
+    , resyncTimeout     :: Time Millisecond
+    , distributionFile  :: FilePath
     } deriving (Show)
 
 msFromIntRead :: ReadM (Time Millisecond)

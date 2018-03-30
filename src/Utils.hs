@@ -9,22 +9,22 @@ module Utils
     , hash
     ) where
 
-import Control.Concurrent (myThreadId)
-import Control.Logging
-import Crypto.Sign.Ed25519
-import Data.Semigroup
-import Data.ByteString (ByteString)
-import Data.ByteString.Base58
-import qualified Crypto.Hash.MD5 as MD5
-import qualified Data.ByteString.Base16 as Base16
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.Digest.Pure.SHA as SHA
-import qualified Data.Text as T
-import Data.Time.Clock.POSIX (getPOSIXTime)
-import Prelude hiding (log)
-import Serokell.Communication.IPC (NodeId, unNodeId)
-import Time
+import           Control.Concurrent         (myThreadId)
+import           Control.Logging
+import qualified Crypto.Hash.MD5            as MD5
+import           Crypto.Sign.Ed25519
+import           Data.ByteString            (ByteString)
+import qualified Data.ByteString.Base16     as Base16
+import           Data.ByteString.Base58
+import qualified Data.ByteString.Char8      as BSC
+import qualified Data.ByteString.Lazy       as BL
+import qualified Data.Digest.Pure.SHA       as SHA
+import           Data.Semigroup
+import qualified Data.Text                  as T
+import           Data.Time.Clock.POSIX      (getPOSIXTime)
+import           Prelude                    hiding (log)
+import           Serokell.Communication.IPC (NodeId, unNodeId)
+import           Time
 
 encodeSignature :: Signature -> ByteString
 encodeSignature = hash . unSignature

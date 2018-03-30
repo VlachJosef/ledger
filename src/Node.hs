@@ -1,6 +1,6 @@
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DeriveGeneric    #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE RecordWildCards  #-}
 {-# LANGUAGE TypeApplications #-}
 
 module Node
@@ -10,36 +10,37 @@ module Node
     , initialNodeState
     ) where
 
-import Node.Internal
-import Address
-import Data.Functor
-import Block
-import Control.Concurrent (Chan, ThreadId, dupChan, forkIO, modifyMVar_, newChan, newMVar, putMVar, readChan, readMVar, takeMVar, writeChan)
-import Control.Exception (try, IOException)
-import Control.Logging
-import Crypto.Sign.Ed25519 (Signature, dsign, toPublicKey)
-import Data.Binary (encode)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BSC
+import           Address
+import           Block
+import           Control.Concurrent         (Chan, ThreadId, dupChan, forkIO, modifyMVar_, newChan, newMVar, putMVar,
+                                             readChan, readMVar, takeMVar, writeChan)
+import           Control.Exception          (IOException, try)
+import           Control.Logging
+import           Crypto.Sign.Ed25519        (Signature, dsign, toPublicKey)
+import           Data.Binary                (encode)
+import           Data.ByteString            (ByteString)
+import qualified Data.ByteString.Char8      as BSC
 import qualified Data.ByteString.Conversion as DBC
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe)
-import Data.List as List
-import Data.List.NonEmpty( NonEmpty( (:|) ), (<|) )
-import qualified Data.List.NonEmpty as NEL
-import Data.Semigroup
-import Exchange
-import Ledger
-import NodeCommandLine
-import Serokell.Communication.IPC
-import System.Directory (doesFileExist, removeFile)
-import Utils
-import Transaction
-import Text.PrettyPrint.Boxes as Boxes (render, vcat, hsep, left, text)
-import Node.Data
-import System.Posix.Signals
-import Time.Units (Millisecond, Time, threadDelay, toNum, ms)
+import qualified Data.ByteString.Lazy       as BSL
+import           Data.Functor
+import           Data.List                  as List
+import           Data.List.NonEmpty         (NonEmpty ((:|)), (<|))
+import qualified Data.List.NonEmpty         as NEL
+import qualified Data.Map.Strict            as Map
+import           Data.Maybe                 (fromMaybe)
+import           Data.Semigroup
+import           Exchange
+import           Ledger
+import           Node.Data
+import           Node.Internal
+import           NodeCommandLine
+import           Serokell.Communication.IPC
+import           System.Directory           (doesFileExist, removeFile)
+import           System.Posix.Signals
+import           Text.PrettyPrint.Boxes     as Boxes (hsep, left, render, text, vcat)
+import           Time.Units                 (Millisecond, Time, ms, threadDelay, toNum)
+import           Transaction
+import           Utils
 
 calculateNeighbours :: NodeConfig -> [NodeId]
 calculateNeighbours nodeConfig =
@@ -320,7 +321,7 @@ parseAddressAndAmount :: BSC.ByteString -> Maybe (Address, Int)
 parseAddressAndAmount bs = case BSC.words bs of
   [pk, amountAsStr] ->
     case DBC.fromByteString amountAsStr of
-      Just n -> Just (Address pk, n)
+      Just n  -> Just (Address pk, n)
       Nothing -> Nothing
   _ -> Nothing
 

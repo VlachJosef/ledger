@@ -1,26 +1,26 @@
+{-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Client
     ( connectClient
     , NodeConversation(..)
     ) where
 
-import Address
-import ClientCommandLine
-import Control.Concurrent
-import Crypto.Sign.Ed25519
-import Data.Binary
-import qualified Data.ByteString as S
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Conversion as DBC
-import Data.ByteString.Conversion.To
-import qualified Data.ByteString.Lazy as BL
-import Data.Semigroup
-import Exchange
-import Serokell.Communication.IPC
-import Transaction
-import Utils
+import           Address
+import           ClientCommandLine
+import           Control.Concurrent
+import           Crypto.Sign.Ed25519
+import           Data.Binary
+import qualified Data.ByteString               as S
+import qualified Data.ByteString.Char8         as BSC
+import qualified Data.ByteString.Conversion    as DBC
+import           Data.ByteString.Conversion.To
+import qualified Data.ByteString.Lazy          as BL
+import           Data.Semigroup
+import           Exchange
+import           Serokell.Communication.IPC
+import           Transaction
+import           Utils
 
 data PossibleCmd
     = Cmd ClientCmd
@@ -81,7 +81,7 @@ sendExchangeCLI (NodeConversation Conversation {..}) exchange =
   in do resp <- send encodedExchangeCLI *> recvAll recv
         case decodeClientExchangeCLIResponse resp of
           Right (_, _, res) -> pure res
-          Left _ -> error "Decoding of ClientExchangeCLIResponse failed"
+          Left _            -> error "Decoding of ClientExchangeCLIResponse failed"
 
 connect :: NodeId -> SecretKey -> NodeConversation -> Conversation -> IO Bool
 connect clientId sk nc Conversation {..} =

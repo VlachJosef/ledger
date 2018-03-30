@@ -1,17 +1,17 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Transaction where
 
-import Address
-import Crypto.Sign.Ed25519
-import Data.Binary
-import Data.ByteString (ByteString)
+import           Address
+import           Crypto.Sign.Ed25519
+import           Data.Binary
+import           Data.ByteString       (ByteString)
 import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy as BL
-import Data.Semigroup
-import qualified GHC.Generics as G
-import Time (Timestamp)
+import qualified Data.ByteString.Lazy  as BL
+import           Data.Semigroup
+import qualified GHC.Generics          as G
+import           Time                  (Timestamp)
 
 data Transfer = Transfer
     { from   :: PublicKey
@@ -46,9 +46,9 @@ instance Show TransactionId where
 
 data Transaction = Transaction
     { transactionId :: TransactionId
-    , transfer :: Transfer
-    , signature :: Signature
-    , timestamp :: Timestamp
+    , transfer      :: Transfer
+    , signature     :: Signature
+    , timestamp     :: Timestamp
     } deriving (Eq, G.Generic)
 
 instance Show Transaction where

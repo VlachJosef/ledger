@@ -1,20 +1,22 @@
+{-# LANGUAGE PackageImports #-}
+
 module Test.Utils where
 
-import Address
-import Block
-import Control.Newtype
-import Crypto.Sign.Ed25519
+import           Address
+import           Block
+import           Control.Newtype
+import           Crypto.Sign.Ed25519
 import qualified Data.ByteString.Char8 as C
-import qualified Data.Map.Strict as Map
-import Ledger
-import Time
-import Transaction
-import Utils
+import qualified Data.Map.Strict       as Map
+import           Ledger
+import           "crypto-ledger" Time  (Timestamp)
+import           Transaction
+import           Utils
 
 keysFactory :: String -> PublicKey
 keysFactory seed =
     case createKeypairFromSeed_ (C.pack seed) of
-        Nothing -> error "seed has incorrect length"
+        Nothing      -> error "seed has incorrect length"
         Just (pk, _) -> pk
 
 testPk :: PublicKey

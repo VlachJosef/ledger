@@ -1,12 +1,12 @@
 module Node.Data where
 
-import Serokell.Communication.IPC
-import Transaction
-import NodeCommandLine
-import Control.Concurrent
-import Block
-import Ledger
-import Exchange
+import           Block
+import           Control.Concurrent
+import           Exchange
+import           Ledger
+import           NodeCommandLine
+import           Serokell.Communication.IPC
+import           Transaction
 
 data NodeState = NodeState
     { nodeConfig       :: NodeConfig

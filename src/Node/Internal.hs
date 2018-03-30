@@ -1,13 +1,13 @@
 module Node.Internal where
 
-import Address
-import Block
-import qualified Data.Map.Strict as Map
+import           Address
+import           Block
 import qualified Data.List.NonEmpty as NEL
-import Ledger
-import Transaction
-import Node.Data
-import Data.Semigroup
+import qualified Data.Map.Strict    as Map
+import           Data.Semigroup
+import           Ledger
+import           Node.Data
+import           Transaction
 
 data BlockToLedger
     = BlockToLedger [LedgerError]
@@ -35,7 +35,7 @@ applyTransaction
     -> ([LedgerError], Ledger, [Transaction])
 applyTransaction tx (errors, l@(Ledger ledger), validTransactions) =
     case updatedLedger of
-        Left err -> (err : errors, l, validTransactions)
+        Left err  -> (err : errors, l, validTransactions)
         Right led -> (errors, led, tx : validTransactions)
   where
     tran        = transfer tx
@@ -90,7 +90,7 @@ addReplaceBlock block nodeState blocks ledger =
           in if recievedBlockTimeStamp < currentBlockTimeStamp then
                case snd $ NEL.uncons blocks of
                 Just blocksTail -> addReplaceBlock block nodeState blocksTail (rewindBlock ledger currentBlock)
-                Nothing -> BlockNotAdded "Error. Cannot replace genesis block."
+                Nothing         -> BlockNotAdded "Error. Cannot replace genesis block."
              else BlockNotAdded $ "Received block index " <> show recievedBlockId
               <> " with timestamp " <> show recievedBlockTimeStamp
               <> " newer than current block timestamp " <> show currentBlockTimeStamp

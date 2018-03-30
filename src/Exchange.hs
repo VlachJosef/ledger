@@ -1,26 +1,26 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Exchange where
 
-import GHC.Int
-import Address
-import Block
-import Crypto.Sign.Ed25519 (unSecretKey, unPublicKey, SecretKey(..), PublicKey(..))
-import Data.Binary
-import Data.Binary.Get (ByteOffset, Get, getByteString, getWord8, getInt32be, runGet)
-import Data.Binary.Put (                 putByteString, putWord8, putInt32be, runPut)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString.Char8  as BSC
-import qualified Data.ByteString.Lazy as BL
-import Data.List.NonEmpty
-import Data.Semigroup
-import Debug.Trace
-import qualified GHC.Generics as G
-import OrphanedShow
-import Serokell.Communication.IPC (NodeId(..))
-import Transaction
+import           Address
+import           Block
+import           Crypto.Sign.Ed25519        (PublicKey (..), SecretKey (..), unPublicKey, unSecretKey)
+import           Data.Binary
+import           Data.Binary.Get            (ByteOffset, Get, getByteString, getInt32be, getWord8, runGet)
+import           Data.Binary.Put            (putByteString, putInt32be, putWord8, runPut)
+import           Data.ByteString            (ByteString)
+import qualified Data.ByteString.Base16     as B16
+import qualified Data.ByteString.Char8      as BSC
+import qualified Data.ByteString.Lazy       as BL
+import           Data.List.NonEmpty
+import           Data.Semigroup
+import           Debug.Trace
+import qualified GHC.Generics               as G
+import           GHC.Int
+import           OrphanedShow
+import           Serokell.Communication.IPC (NodeId (..))
+import           Transaction
 
 data Exchange
     = NodeExchange NodeId NodeExchange
@@ -97,9 +97,9 @@ data ClientExchangeCLI
 instance Binary ClientExchangeCLI
 
 instance Show ClientExchange where
-    show (MakeTransfer tran)           = "MakeTransfer transfer: " <> show tran
-    show (AskBalance pk)               = "AskBalance pk: " <> show pk
-    show (Query txId)                  = "Query txId: " <> show txId
+    show (MakeTransfer tran) = "MakeTransfer transfer: " <> show tran
+    show (AskBalance pk)     = "AskBalance pk: " <> show pk
+    show (Query txId)        = "Query txId: " <> show txId
 
 instance Show ClientExchangeCLI where
     show (AskBalanceByAddress address) = "AskBalance address: " <> show address

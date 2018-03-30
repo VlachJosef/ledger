@@ -1,13 +1,13 @@
 {-# LANGUAGE RecordWildCards #-}
 module Main where
 
-import NcCommandLine (parseArguments, NcConfig(..))
-import Serokell.Communication.IPC
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BSC
-import Options.Applicative (execParser)
-import Control.Exception (catch, IOException)
-import Data.Semigroup ((<>))
+import           Control.Exception          (IOException, catch)
+import           Data.ByteString            (ByteString)
+import qualified Data.ByteString.Char8      as BSC
+import           Data.Semigroup             ((<>))
+import           NcCommandLine              (NcConfig (..), parseArguments)
+import           Options.Applicative        (execParser)
+import           Serokell.Communication.IPC
 
 main :: IO ()
 main = connect =<< execParser parseArguments

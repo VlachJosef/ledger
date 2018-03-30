@@ -1,7 +1,7 @@
 module BoxTest where
 
-import Data.List (transpose)
-import Text.PrettyPrint.Boxes
+import           Data.List              (transpose)
+import           Text.PrettyPrint.Boxes
 
 blockIds :: [String]
 blockIds = show <$> [1 .. 10]

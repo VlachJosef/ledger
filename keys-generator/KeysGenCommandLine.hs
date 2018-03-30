@@ -3,8 +3,8 @@ module KeysGenCommandLine
     , parseArguments
     ) where
 
-import Data.Semigroup ((<>))
-import Options.Applicative
+import           Data.Semigroup      ((<>))
+import           Options.Applicative
 
 newtype KeyGenConfig = KeyGenConfig
     { numberOfKeys :: Int

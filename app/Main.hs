@@ -1,8 +1,8 @@
 module Main where
 
-import Node
-import NodeCommandLine
-import Options.Applicative
+import           Node                (establishClusterConnection)
+import           NodeCommandLine     (parseArguments)
+import           Options.Applicative (execParser)
 
 main :: IO ()
 main = establishClusterConnection =<< execParser parseArguments

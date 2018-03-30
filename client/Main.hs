@@ -1,22 +1,22 @@
 module Main where
 
-import Address
-import Client
-import ClientCommandLine
-import Control.Exception (catch, IOException)
-import Control.Logging
-import Crypto.Sign.Ed25519
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.Digest.Pure.SHA as SHA
-import Data.Functor
-import Data.Monoid
-import Options.Applicative
-import Serokell.Communication.IPC
-import System.Directory (doesFileExist, removeFile)
-import System.Posix.Signals
-import Time.Units (sec, threadDelay)
-import Utils
+import           Address
+import           Client
+import           ClientCommandLine
+import           Control.Exception          (IOException, catch)
+import           Control.Logging
+import           Crypto.Sign.Ed25519
+import qualified Data.ByteString            as BS
+import qualified Data.ByteString.Lazy       as BL
+import qualified Data.Digest.Pure.SHA       as SHA
+import           Data.Functor
+import           Data.Monoid
+import           Options.Applicative
+import           Serokell.Communication.IPC
+import           System.Directory           (doesFileExist, removeFile)
+import           System.Posix.Signals
+import           Time.Units                 (sec, threadDelay)
+import           Utils
 
 main :: IO ()
 main = handleClient =<< execParser parseArguments

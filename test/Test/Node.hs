@@ -1,16 +1,16 @@
 module Test.Node where
 
-import Address
-import Block
-import Control.Concurrent
-import Crypto.Sign.Ed25519
-import Node
-import NodeCommandLine
-import Serokell.Communication.IPC
-import Test.Hspec
-import Test.Utils
-import Control.Logging
-import qualified Data.ByteString.Base16 as Base16
+import           Address
+import           Block
+import           Control.Concurrent
+import           Control.Logging
+import           Crypto.Sign.Ed25519
+import qualified Data.ByteString.Base16     as Base16
+import           Node
+import           NodeCommandLine
+import           Serokell.Communication.IPC
+import           Test.Hspec
+import           Test.Utils
 
 testNodeConfig :: NodeConfig
 testNodeConfig = NodeConfig (NodeId 1) 5 "./sockets" 1 1 1 ""

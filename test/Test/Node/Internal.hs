@@ -1,10 +1,10 @@
 module Test.Node.Internal where
 
-import Address
-import Ledger
-import Node.Internal
-import Test.Hspec
-import Test.Utils
+import           Address
+import           Ledger
+import           Node.Internal
+import           Test.Hspec
+import           Test.Utils
 
 main :: IO ()
 main =

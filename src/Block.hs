@@ -2,14 +2,14 @@
 
 module Block where
 
-import Address
-import Crypto.Sign.Ed25519
-import Data.Binary
-import qualified Data.List.NonEmpty as NEL
-import qualified GHC.Generics as G
-import Time
-import Transaction
-import Utils
+import           Address
+import           Crypto.Sign.Ed25519
+import           Data.Binary
+import qualified Data.List.NonEmpty  as NEL
+import qualified GHC.Generics        as G
+import           Time
+import           Transaction
+import           Utils
 
 data Block = Block
     { index        :: Index
