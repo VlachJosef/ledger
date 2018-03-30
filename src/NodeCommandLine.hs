@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeApplications #-}
+
 module NodeCommandLine
     ( NodeConfig(..)
     , parseArguments
@@ -7,7 +9,7 @@ import Data.Semigroup ((<>))
 import Options.Applicative
 import OrphanedShow
 import Serokell.Communication.IPC
-import Time.Units (Millisecond, Time)
+import Time.Units (Millisecond, Time, ms)
 
 data NodeConfig = NodeConfig
     { nodeId :: NodeId
@@ -19,6 +21,9 @@ data NodeConfig = NodeConfig
     , distributionFile :: FilePath
     } deriving (Show)
 
+msFromIntRead :: ReadM (Time Millisecond)
+msFromIntRead = ms . fromIntegral <$> auto @Int
+
 nodeConfigParser :: Parser NodeConfig
 nodeConfigParser =
     NodeConfig <$>
@@ -29,15 +34,15 @@ nodeConfigParser =
     strArgument
         (metavar "SOCKET_DIR" <> help "path to the directory with Unix sockets") <*>
     argument
-        auto
+        msFromIntRead
         (metavar "DISCONNECT_TIMEOUT" <>
          help
              "Adversary can’t perform the disconnect operation more often than once in disconnectTimeout ms") <*>
     argument
-        auto
+        msFromIntRead
         (metavar "STABILITY_TIMEOUT" <> help "Transaction stability timeout") <*>
     argument
-        auto
+        msFromIntRead
         (metavar "RESYNC_TIMEOUT" <> help "Timeout for ledger synchronization") <*>
     strArgument
         (metavar "DISTRIBUTION_FILE" <> help "Distribution file")
