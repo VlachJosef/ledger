@@ -315,7 +315,7 @@ runNodes :: [ProcessData] -> IO [RunningProcess]
 runNodes xs = sequence $ runNode <$> xs
 
 prepareNodes :: Int -> [ProcessData]
-prepareNodes n = [ ProcessData (NodeId i) (proc nodeExec [show i, show n, "sockets", "1000ms", "1000ms", "1000ms", "Distribution.keys"])
+prepareNodes n = [ ProcessData (NodeId i) (proc nodeExec [show i, show n, "sockets", "1000", "1000", "1000", "Distribution.keys"])
      | i <- [0 .. (n - 1)]
      ]
 

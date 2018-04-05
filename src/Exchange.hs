@@ -157,7 +157,7 @@ decodeSubmitResp (SubmitResp Nothing) = putWord8 0
 decodeSubmitResp (SubmitResp (Just transactionId)) = do
   putWord8 1
   putByteString . unTransactionId $ transactionId
-decodeSubmitResp (BalanceResp bal) = put bal
+decodeSubmitResp (BalanceResp bal) = putInt32be (fromIntegral bal)
 decodeSubmitResp (QueryResp exists) = if exists then putWord8 1 else putWord8 0
 
 encodeStringResp :: String -> Put
