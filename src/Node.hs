@@ -195,14 +195,13 @@ handleClientExchange :: NodeState
                      -> IO ClientExchangeResponse
 handleClientExchange nodeState =
   \case
-    MakeTransfer InitiateTransfer{..} ->
-      let
-        transfer      = Transfer (toPublicKey itFrom) (deriveAddress itTo) itAmount
-        signature     = dsign itFrom (encodeTransfer transfer)
-        transactionId = createTransaction signature
-      in do
+    MakeTransfer InitiateTransfer{..} -> do
         timestamp <- now
-        let tx = Transaction transactionId transfer signature timestamp
+        let
+          transfer      = Transfer (toPublicKey itFrom) (deriveAddress itTo) itAmount
+          signature     = dsign itFrom ((toByteString . nodeId . nodeConfig $ nodeState) <> toByteString timestamp <> encodeTransfer transfer)
+          transactionId = createTransaction signature
+          tx            = Transaction transactionId transfer signature timestamp
         void $ handleNodeExchange nodeState (AddTransaction tx)
         pure $ SubmitResp $ Just transactionId
 
@@ -212,6 +211,9 @@ handleClientExchange nodeState =
       blocks <- readMVar (blockchain nodeState)
       let wasAdded = transactionIdInBlockchain txId blocks
       pure $ QueryResp wasAdded
+    where
+      toByteString :: Show a => a -> ByteString
+      toByteString = BSC.pack . show
 
 handleClientExchangeCLI :: NodeState
                         -> ClientExchangeCLI
