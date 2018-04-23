@@ -23,8 +23,7 @@ import           Serokell.Communication.IPC (NodeId (..))
 import           Transaction
 
 data Exchange
-    = NodeExchange NodeId NodeExchange
-    | ClientExchange ClientExchange
+    = ClientExchange ClientExchange
     | ClientExchangeCLI ClientExchangeCLI
     deriving (Show, G.Generic)
 
@@ -45,10 +44,6 @@ instance Binary Exchange where
   put (ClientExchangeCLI (AskBalanceByAddress address)) =  do
     putWord8 4
     putByteString . rawAddress $ address
-  put (NodeExchange nodeId nodeExchange) = do
-    putWord8 5
-    put nodeId
-    put nodeExchange
 
   get = do
     determinant <- getWord8
@@ -69,10 +64,6 @@ instance Binary Exchange where
       4 -> do
         address <- Address <$> getByteString 32
         pure . ClientExchangeCLI . AskBalanceByAddress $ address
-      5 -> do
-        nodeId <- get :: (Get NodeId)
-        nodeExchange <- get :: (Get NodeExchange)
-        pure $ NodeExchange nodeId nodeExchange
       _ -> error "Unknown data received"
 
 data NodeExchange
@@ -190,6 +181,9 @@ encodeQueryResp = do
 
 decodeExchange :: ByteString -> DecodeRes Exchange
 decodeExchange = decodeExchangeAs
+
+decodeNodeExchange :: ByteString -> DecodeRes NodeExchange
+decodeNodeExchange = decodeExchangeAs
 
 decodeNodeExchangeResponse :: ByteString -> DecodeRes NodeExchangeResponse
 decodeNodeExchangeResponse = decodeExchangeAs

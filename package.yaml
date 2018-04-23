@@ -21,30 +21,31 @@ description:         Please see the README on Github at <https://github.com/gith
 default-extensions:
 - OverloadedStrings
 dependencies:
+- async
 - base >= 4.7 && < 5
-- ed25519
-- bytestring
-- serokell-test-task-lib ^>= 1.0
-- network
-- optparse-applicative
-- binary
-- base58-bytestring
-- cryptohash-md5
-- SHA
-- containers
-- bytestring-conversion
-- newtype-generics
-- time
-- directory
-- boxes
 - base16-bytestring
-- random
-- logging
-- text
-- unix
+- base58-bytestring
+- binary
+- boxes
+- bytestring
+- bytestring-conversion
+- containers
+- cryptohash-md5
+- directory
+- ed25519
 - filepath
-- parsec
+- logging
+- network
+- newtype-generics
 - o-clock
+- optparse-applicative
+- parsec
+- random
+- serokell-test-task-lib ^>= 1.0
+- SHA
+- text
+- time
+- unix
 
 library:
   source-dirs: src

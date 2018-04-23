@@ -20,6 +20,9 @@ data NodeState = NodeState
 fetchNodeId :: NodeState -> NodeId
 fetchNodeId = nodeId . nodeConfig
 
+toInterNodeId :: NodeId -> NodeId
+toInterNodeId = NodeId . (+1000) . unNodeId
+
 data AddBlockRes
  = BlockAdded [LedgerError] Block Ledger BlockChain
  | BlockNotAdded String

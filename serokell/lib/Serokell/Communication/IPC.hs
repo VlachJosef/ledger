@@ -83,7 +83,10 @@ listenUnixSocket :: SocketDirectory
                  -> NodeId
                  -> (Conversation -> IO Bool)
                  -> IO ()
-listenUnixSocket socketDirectory (NodeId nodeId) handler =
+listenUnixSocket socketDirectory (NodeId nodeId) handler = do
+    if nodeId >= 1000
+      then setEnv localSocketFilePath socketPath
+      else pure ()
     initializeSocket allocator acceptLoop
   where
     socketPath :: FilePath
@@ -94,7 +97,6 @@ listenUnixSocket socketDirectory (NodeId nodeId) handler =
       where
         acceptServerSock :: IO Conversation
         acceptServerSock = do
-          setEnv localSocketFilePath socketPath
           (conn, _) <- Net.accept socket
           return $ Conversation (sendSock conn) (recvSock conn)
 
@@ -125,15 +127,15 @@ connectToUnixSocket socketDirectory (NodeId nodeId) handler =
                 mLocalSocketFile <- lookupEnv localSocketFilePath
 
                 executableLocalFile <- case mLocalSocketFile of
-                  Nothing -> pure True
+                  Nothing              -> pure True
                   Just localSocketFile -> executable <$> getPermissions localSocketFile
 
                 permission <- getPermissions socketPath
-                if executable permission && executableLocalFile
-                  then do
+                if nodeId >= 1000 && (not (executable permission) || not executableLocalFile)
+                  then Net.close socket
+                  else do
                     traverse_ msDelay sendDelay
                     sendDo data_
-                  else Net.close socket
 
         sendDo :: ByteString -> IO ()
         sendDo = sendSock socket

@@ -14,6 +14,7 @@ import           Address
 import           Block
 import           Control.Concurrent         (Chan, ThreadId, dupChan, forkIO, modifyMVar_, newChan, newMVar, putMVar,
                                              readChan, readMVar, takeMVar, writeChan)
+import           Control.Concurrent.Async   (concurrently_)
 import           Control.Exception          (IOException, try)
 import           Control.Logging
 import           Crypto.Sign.Ed25519        (Signature, dsign, toPublicKey)
@@ -45,7 +46,7 @@ import           Utils
 calculateNeighbours :: NodeConfig -> [NodeId]
 calculateNeighbours nodeConfig =
     let nId = (unNodeId . nodeId) nodeConfig
-    in NodeId <$> filter (/= nId) [0 .. (nodeCount nodeConfig - 1)]
+    in NodeId . (+1000) <$> filter (/= nId) [0 .. (nodeCount nodeConfig - 1)]
 
 initialNodeState :: NodeConfig -> [(Address, Int)] -> IO NodeState
 initialNodeState nodeConfig initialDistribution = do
@@ -265,7 +266,7 @@ neighbourHandler nodeState broadcastChannel nId cc@Conversation {..} = do
   logMessage msg = logThread $ "[Neighbour Handler " <> show nId  <> "] " <> msg
 
 encodeNodeExchange :: NodeId -> NodeExchange -> ByteString
-encodeNodeExchange nId = BSL.toStrict . encode . NodeExchange nId
+encodeNodeExchange nId = BSL.toStrict . encode -- TODO propagate nId
 
 connectToNeighbour :: NodeState -> Chan Broadcast -> NodeId -> IO ()
 connectToNeighbour nodeState broadcastChan nodeId =
@@ -289,8 +290,40 @@ retry nodeState broadcastChan nodeId = let
     logThread $ "Trying reestablish connection with nodeId " <> nId
     connectToNeighbour nodeState broadcastChan nodeId
 
-commu :: NodeState -> Conversation -> IO Bool
-commu nodeState conversation =
+clientExchangeHandler :: NodeState -> ByteString -> IO ByteString
+clientExchangeHandler ns = logAndEncode ns . toClientExchange
+    where
+      logAndEncode :: NodeState -> Exchange -> IO ByteString
+      logAndEncode ns exchange = do
+        logThread $ "[ClientNodeCommunication handler] Received: " <> show exchange
+        case exchange of
+          ClientExchange clientNodeExchange ->
+              runPutStrict . decodeSubmitResp <$> handleClientExchange ns clientNodeExchange
+          ClientExchangeCLI clientNodeExchangeCLI ->
+              BSL.toStrict . encode <$> handleClientExchangeCLI ns clientNodeExchangeCLI
+
+toClientExchange :: ByteString -> Exchange
+toClientExchange input = case decodeExchange input of
+    Right (_, _, exchange) -> exchange
+    Left (bytestring, offset, errorMessage) ->
+      error $ "UPS, Something broke: " <> show errorMessage <> ", offset: " <> show offset <> ", payload: " <> show bytestring
+
+nodeExchangeHandler :: NodeState -> ByteString -> IO ByteString
+nodeExchangeHandler ns = logAndEncode ns . toNodeExchange
+    where
+      logAndEncode :: NodeState -> NodeExchange -> IO ByteString
+      logAndEncode ns nodeExchange = do
+        logThread $ "[InterNodeCommunication handler] Received: " <> show nodeExchange
+        BSL.toStrict . encode <$> handleNodeExchange ns nodeExchange
+
+toNodeExchange :: ByteString -> NodeExchange
+toNodeExchange input = case decodeNodeExchange input of
+    Right (_, _, nodeExchange) -> nodeExchange
+    Left (bytestring, offset, errorMessage) ->
+      error $ "UPS, Something broke: " <> show errorMessage <> ", offset: " <> show offset <> ", payload: " <> show bytestring
+
+communication :: (NodeState -> ByteString -> IO ByteString) -> NodeState -> Conversation -> IO Bool
+communication inputHandler nodeState conversation =
     True <$ forkIO (logThread "Forking new thread!" <* loopMain nodeState)
   where
     loopMain :: NodeState -> IO ()
@@ -302,18 +335,8 @@ commu nodeState conversation =
             if null (BSC.unpack input)
               then logThread "Closed by peer!!!"
               else do
-                let exchange = decodeExchange input
-                logThread $ "[Main handler] Received: " <> show exchange
-                exchangeResponse <-
-                    case exchange of
-                        Right (_, _, NodeExchange _ nodeExchange) ->
-                           encode <$> handleNodeExchange ns nodeExchange
-                        Right (_, _, ClientExchange clientNodeExchange) ->
-                           BSL.fromStrict . runPutStrict . decodeSubmitResp <$> handleClientExchange ns clientNodeExchange
-                        Right (_, _, ClientExchangeCLI clientNodeExchangeCLI) ->
-                          encode <$> handleClientExchangeCLI ns clientNodeExchangeCLI
-                        Left (bytestring, offset, errorMessage) -> error $ "UPS, Something broke: " <> show errorMessage <> ", offset: " <> show offset <> ", payload: " <> show bytestring
-                send conversation (BSL.toStrict exchangeResponse)
+                response <- inputHandler ns input
+                send conversation response
                 loop
 
 startMinerThread :: NodeState -> IO ()
@@ -369,17 +392,27 @@ connectToNeighbours nodeState =
 
 listenForClientConnection :: NodeState -> IO ()
 listenForClientConnection nodeState =
-    listenUnixSocket "sockets" (fetchNodeId nodeState) (commu nodeState)
+    concurrently_
+      (listenUnixSocket "sockets" (fetchNodeId nodeState) (communication clientExchangeHandler nodeState))
+      (listenUnixSocket "sockets" (toInterNodeId $ fetchNodeId nodeState) (communication nodeExchangeHandler nodeState))
 
 terminationHandler :: NodeConfig -> Signal ->  Handler
 terminationHandler nodeConfig signal = CatchOnce $ do
     logThread $ "Caught " <> show signal <> " signal."
-    let socketFile = "sockets/" <> (show . unNodeId . nodeId) nodeConfig <> ".sock"
-    fileExists <- doesFileExist socketFile
-    if fileExists
-      then do
-        logThread $ "Removing socket file: " <> socketFile
-        removeFile socketFile
-      else logThread $ "File: " <> socketFile <> " not found."
+    let nId = nodeId nodeConfig
+    removeSocketFile nId
+    removeSocketFile $ toInterNodeId nId
     flushLog
     raiseSignal signal
+
+    where
+      removeSocketFile :: NodeId -> IO ()
+      removeSocketFile nodeId =
+        let socketFile = "sockets/" <> show nodeId <> ".sock"
+        in do
+          fileExists <- doesFileExist socketFile
+          if fileExists
+            then do
+              logThread $ "Removing socket file: " <> socketFile
+              removeFile socketFile
+            else logThread $ "File: " <> socketFile <> " not found."

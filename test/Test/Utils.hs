@@ -4,7 +4,7 @@ module Test.Utils where
 
 import           Address
 import           Block
-import           Control.Newtype
+import           Control.Newtype       (over)
 import           Crypto.Sign.Ed25519
 import qualified Data.ByteString.Char8 as C
 import qualified Data.Map.Strict       as Map
