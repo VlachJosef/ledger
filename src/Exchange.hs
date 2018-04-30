@@ -3,24 +3,21 @@
 
 module Exchange where
 
-import           Address
-import           Block
+import           Address                    (Address (..))
+import           Block                      (Block, Index)
 import           Crypto.Sign.Ed25519        (PublicKey (..), SecretKey (..), unPublicKey, unSecretKey)
-import           Data.Binary
-import           Data.Binary.Get            (ByteOffset, Get, getByteString, getInt32be, getWord8, runGet)
+import           Data.Binary                (Binary, Get, Put, decodeOrFail, get, put)
+import           Data.Binary.Get            (ByteOffset, getByteString, getInt32be, getWord8, runGet)
 import           Data.Binary.Put            (putByteString, putInt32be, putWord8, runPut)
 import           Data.ByteString            (ByteString)
 import qualified Data.ByteString.Base16     as B16
 import qualified Data.ByteString.Char8      as BSC
 import qualified Data.ByteString.Lazy       as BL
-import           Data.List.NonEmpty
-import           Data.Semigroup
-import           Debug.Trace
+import           Data.List.NonEmpty         (NonEmpty)
+import           Data.Semigroup             ((<>))
 import qualified GHC.Generics               as G
-import           GHC.Int
-import           OrphanedShow
 import           Serokell.Communication.IPC (NodeId (..))
-import           Transaction
+import           Transaction                (InitiateTransfer (..), Transaction, TransactionId (..))
 
 data Exchange
     = ClientExchange ClientExchange

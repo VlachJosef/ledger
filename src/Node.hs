@@ -10,38 +10,48 @@ module Node
     , initialNodeState
     ) where
 
-import           Address
-import           Block
+import           Address                    (Address (..), deriveAddress)
+import           Block                      (Block (..), BlockChain, Index (..), genesisBlock, index, nextIndex,
+                                             timestamp)
 import           Control.Concurrent         (Chan, ThreadId, dupChan, forkIO, modifyMVar_, newChan, newMVar, putMVar,
                                              readChan, readMVar, takeMVar, writeChan)
 import           Control.Concurrent.Async   (concurrently_)
 import           Control.Exception          (IOException, try)
-import           Control.Logging
+import           Control.Logging            (flushLog, withFileLogging)
 import           Crypto.Sign.Ed25519        (Signature, dsign, toPublicKey)
+import           Data.Bifunctor             (bimap)
 import           Data.Binary                (encode)
+import           Data.Binary.Get            (ByteOffset)
 import           Data.ByteString            (ByteString)
 import qualified Data.ByteString.Char8      as BSC
 import qualified Data.ByteString.Conversion as DBC
 import qualified Data.ByteString.Lazy       as BSL
-import           Data.Functor
+import           Data.Functor               (void)
 import           Data.List                  as List
 import           Data.List.NonEmpty         (NonEmpty ((:|)), (<|))
 import qualified Data.List.NonEmpty         as NEL
 import qualified Data.Map.Strict            as Map
 import           Data.Maybe                 (fromMaybe)
-import           Data.Semigroup
-import           Exchange
-import           Ledger
-import           Node.Data
-import           Node.Internal
-import           NodeCommandLine
-import           Serokell.Communication.IPC
+import           Data.Semigroup             ((<>))
+import           Exchange                   (Broadcast (..), ClientExchange (..), ClientExchangeCLI (..),
+                                             ClientExchangeCLIResponse (..), ClientExchangeResponse (..), Exchange (..),
+                                             NodeExchange (..), NodeExchangeResponse (..), NodeInfo (..),
+                                             decodeExchange, decodeNodeExchange, decodeNodeExchangeResponse,
+                                             decodeSubmitResp, runPutStrict)
+import           Ledger                     (Ledger (..), LedgerError)
+import           Node.Data                  (AddBlockRes (..), NodeState (..), fetchNodeId, toInterNodeId)
+import           Node.Internal              (addReplaceBlock)
+import           NodeCommandLine            (NodeConfig, distributionFile, nodeCount, nodeId, stabilityTimeout)
+import           Serokell.Communication.IPC (Conversation (..), NodeId (..), connectToUnixSocket, listenUnixSocket)
 import           System.Directory           (doesFileExist, removeFile)
-import           System.Posix.Signals
+import           System.Posix.Signals       (Handler (..), Signal, installHandler, raiseSignal, sigINT, sigTERM)
 import           Text.PrettyPrint.Boxes     as Boxes (hsep, left, render, text, vcat)
 import           Time.Units                 (Millisecond, Time, ms, threadDelay, toNum)
-import           Transaction
-import           Utils
+import           Transaction                (InitiateTransfer (..), Transaction (..), TransactionId (..), Transfer (..),
+                                             amount, encodeTransfer, from, to, transactionId, transfer)
+import           Utils                      (encodeSignature, logThread, now, recvAll, showNodeId)
+
+newtype DecodingError = DecodingError String
 
 calculateNeighbours :: NodeConfig -> [NodeId]
 calculateNeighbours nodeConfig =
@@ -290,8 +300,8 @@ retry nodeState broadcastChan nodeId = let
     logThread $ "Trying reestablish connection with nodeId " <> nId
     connectToNeighbour nodeState broadcastChan nodeId
 
-clientExchangeHandler :: NodeState -> ByteString -> IO ByteString
-clientExchangeHandler ns = logAndEncode ns . toClientExchange
+clientExchangeHandler :: NodeState -> ByteString -> Either DecodingError (IO ByteString)
+clientExchangeHandler ns bs = logAndEncode ns <$> toClientExchange bs
     where
       logAndEncode :: NodeState -> Exchange -> IO ByteString
       logAndEncode ns exchange = do
@@ -302,27 +312,28 @@ clientExchangeHandler ns = logAndEncode ns . toClientExchange
           ClientExchangeCLI clientNodeExchangeCLI ->
               BSL.toStrict . encode <$> handleClientExchangeCLI ns clientNodeExchangeCLI
 
-toClientExchange :: ByteString -> Exchange
-toClientExchange input = case decodeExchange input of
-    Right (_, _, exchange) -> exchange
-    Left (bytestring, offset, errorMessage) ->
-      error $ "UPS, Something broke: " <> show errorMessage <> ", offset: " <> show offset <> ", payload: " <> show bytestring
+toClientExchange :: ByteString -> Either DecodingError Exchange
+toClientExchange input = bimap decodingFailure resultOnly (decodeExchange input)
 
-nodeExchangeHandler :: NodeState -> ByteString -> IO ByteString
-nodeExchangeHandler ns = logAndEncode ns . toNodeExchange
+decodingFailure :: (BSL.ByteString, ByteOffset, String) -> DecodingError
+decodingFailure (bytestring, offset, errorMessage) =
+  DecodingError $ "Cannot decode message: " <> show errorMessage <> ", offset: " <> show offset <> ", payload: " <> show bytestring
+
+resultOnly :: (BSL.ByteString, ByteOffset, a) -> a
+resultOnly (_, _, a) = a
+
+nodeExchangeHandler :: NodeState -> ByteString -> Either DecodingError (IO ByteString)
+nodeExchangeHandler ns bs = logAndEncode ns <$> toNodeExchange bs
     where
       logAndEncode :: NodeState -> NodeExchange -> IO ByteString
       logAndEncode ns nodeExchange = do
         logThread $ "[InterNodeCommunication handler] Received: " <> show nodeExchange
         BSL.toStrict . encode <$> handleNodeExchange ns nodeExchange
 
-toNodeExchange :: ByteString -> NodeExchange
-toNodeExchange input = case decodeNodeExchange input of
-    Right (_, _, nodeExchange) -> nodeExchange
-    Left (bytestring, offset, errorMessage) ->
-      error $ "UPS, Something broke: " <> show errorMessage <> ", offset: " <> show offset <> ", payload: " <> show bytestring
+toNodeExchange :: ByteString -> Either DecodingError NodeExchange
+toNodeExchange input = bimap decodingFailure resultOnly (decodeNodeExchange input)
 
-communication :: (NodeState -> ByteString -> IO ByteString) -> NodeState -> Conversation -> IO Bool
+communication :: (NodeState -> ByteString -> Either DecodingError (IO ByteString)) -> NodeState -> Conversation -> IO Bool
 communication inputHandler nodeState conversation =
     True <$ forkIO (logThread "Forking new thread!" <* loopMain nodeState)
   where
@@ -334,10 +345,16 @@ communication inputHandler nodeState conversation =
             input <- recvAll (recv conversation)
             if null (BSC.unpack input)
               then logThread "Closed by peer!!!"
-              else do
-                response <- inputHandler ns input
-                send conversation response
-                loop
+              else
+                case inputHandler ns input of
+                  Right decodedResp -> do
+                    response <- decodedResp
+                    send conversation response
+                    loop
+                  Left (DecodingError err) -> do
+                    logThread $ "Error: " <> err
+                    send conversation "error" -- let's send something back, as opposite side is waiting for something to receive
+                    loop
 
 startMinerThread :: NodeState -> IO ()
 startMinerThread = void . forkIO . mineblock
@@ -393,8 +410,8 @@ connectToNeighbours nodeState =
 listenForClientConnection :: NodeState -> IO ()
 listenForClientConnection nodeState =
     concurrently_
-      (listenUnixSocket "sockets" (fetchNodeId nodeState) (communication clientExchangeHandler nodeState))
-      (listenUnixSocket "sockets" (toInterNodeId $ fetchNodeId nodeState) (communication nodeExchangeHandler nodeState))
+      (listenUnixSocket "sockets" (fetchNodeId nodeState)                 (communication clientExchangeHandler nodeState))
+      (listenUnixSocket "sockets" (toInterNodeId $ fetchNodeId nodeState) (communication nodeExchangeHandler   nodeState))
 
 terminationHandler :: NodeConfig -> Signal ->  Handler
 terminationHandler nodeConfig signal = CatchOnce $ do
